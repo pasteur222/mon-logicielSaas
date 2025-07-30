@@ -21,7 +21,7 @@ interface AppearanceSettings {
 }
 
 const DEFAULT_SETTINGS: AppearanceSettings = {
-  theme_color: 'yellow',
+  theme_color: 'red',
   font_size: 'normal',
   dark_mode: false,
   reduced_motion: false,
@@ -29,10 +29,11 @@ const DEFAULT_SETTINGS: AppearanceSettings = {
 };
 
 const THEME_COLORS = [
-  { name: 'Yellow (MTN)', value: 'yellow', hex: '#ffcc00' },
+  { name: 'Red (Airtel)', value: 'red', hex: '#dc2626' },
   { name: 'Blue', value: 'blue', hex: '#3b82f6' },
   { name: 'Green', value: 'green', hex: '#22c55e' },
-  { name: 'Red', value: 'red', hex: '#ef4444' },
+  { name: 'Yellow', value: 'yellow', hex: '#dc2626' },
+  { name: 'Orange', value: 'orange', hex: '#ea580c' },
   { name: 'Purple', value: 'purple', hex: '#a855f7' }
 ];
 

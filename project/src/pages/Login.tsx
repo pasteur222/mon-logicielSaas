@@ -96,8 +96,8 @@ const Login = () => {
       <div className="flex-1 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
         <div className="sm:mx-auto sm:w-full sm:max-w-md">
           <div className="flex items-center justify-center gap-2">
-            <Brain className="w-12 h-12 text-yellow-500" />
-            <h2 className="text-3xl font-bold text-gray-900">MTN GPT</h2>
+            <Brain className="w-12 h-12 text-red-600" />
+            <h2 className="text-3xl font-bold text-gray-900">Airtel GPT</h2>
           </div>
           <h2 className="mt-6 text-center text-2xl font-bold text-gray-900">
             {isResettingPassword ? 'Réinitialiser votre mot de passe' : 'Connectez-vous à votre compte'}
@@ -108,7 +108,7 @@ const Login = () => {
             ) : (
               <>
                 Ou{' '}
-                <Link to="/register" className="font-medium text-yellow-500 hover:text-yellow-400">
+                <Link to="/register" className="font-medium text-red-600 hover:text-red-500">
                   créez un nouveau compte
                 </Link>
               </>
@@ -148,7 +148,7 @@ const Login = () => {
                       required
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="appearance-none block w-full pl-10 px-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-yellow-500 focus:border-yellow-500"
+                      className="appearance-none block w-full pl-10 px-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-red-500 focus:border-red-500"
                       placeholder="vous@exemple.com"
                     />
                   </div>
@@ -168,7 +168,7 @@ const Login = () => {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full flex justify-center py-2 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-yellow-500 hover:bg-yellow-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full flex justify-center py-2 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {loading ? (
                       <Loader2 className="w-5 h-5 animate-spin" />
@@ -196,7 +196,7 @@ const Login = () => {
                       required
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="appearance-none block w-full pl-10 px-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-yellow-500 focus:border-yellow-500"
+                      className="appearance-none block w-full pl-10 px-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-red-500 focus:border-red-500"
                       placeholder="vous@exemple.com"
                     />
                   </div>
@@ -215,7 +215,7 @@ const Login = () => {
                       required
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-yellow-500 focus:border-yellow-500 pr-10"
+                      className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-red-500 focus:border-red-500 pr-10"
                     />
                     <button
                       type="button"
@@ -237,7 +237,7 @@ const Login = () => {
                       id="remember-me"
                       name="remember-me"
                       type="checkbox"
-                      className="h-4 w-4 text-yellow-500 focus:ring-yellow-500 border-gray-300 rounded"
+                      className="h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded"
                     />
                     <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900">
                       Se souvenir de moi
@@ -248,7 +248,7 @@ const Login = () => {
                     <button
                       type="button"
                       onClick={() => setIsResettingPassword(true)}
-                      className="font-medium text-yellow-500 hover:text-yellow-400"
+                      className="font-medium text-red-600 hover:text-red-500"
                     >
                       Mot de passe oublié?
                     </button>
@@ -259,7 +259,7 @@ const Login = () => {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full flex justify-center py-2 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-yellow-500 hover:bg-yellow-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full flex justify-center py-2 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {loading ? (
                       <Loader2 className="w-5 h-5 animate-spin" />

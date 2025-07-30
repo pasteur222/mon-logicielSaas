@@ -108,7 +108,7 @@ const AirtelChat = () => {
             <div className="text-center mb-12">
               <div className="flex items-center justify-center gap-3 mb-4">
                 <Brain className="w-12 h-12 text-yellow-500" />
-                <h1 className="text-4xl font-bold text-gray-900">MTN Chat Éducatif</h1>
+                <h1 className="text-4xl font-bold text-gray-900">Airtel Chat Éducatif</h1>
               </div>
               <p className="text-xl text-gray-600 max-w-3xl mx-auto">
                 Votre assistant personnel pour la préparation aux examens d'État et concours
@@ -139,7 +139,7 @@ const AirtelChat = () => {
                   </ul>
                   <button
                     onClick={() => handleSubscribe('weekly')}
-                    className="px-6 py-3 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 shadow-sm flex items-center gap-2"
+                    className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 shadow-sm flex items-center gap-2"
                   >
                     Commencer maintenant
                     <ArrowRight className="w-4 h-4" />
@@ -180,19 +180,19 @@ const AirtelChat = () => {
               
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                 <div className="text-center">
-                  <div className="w-12 h-12 rounded-full bg-yellow-100 text-yellow-500 flex items-center justify-center text-xl font-bold mx-auto mb-4">1</div>
+                  <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-xl font-bold mx-auto mb-4">1</div>
                   <h3 className="text-lg font-medium text-gray-900 mb-2">Abonnez-vous</h3>
                   <p className="text-gray-600">Choisissez le forfait qui correspond à vos besoins et effectuez le paiement</p>
                 </div>
                 
                 <div className="text-center">
-                  <div className="w-12 h-12 rounded-full bg-yellow-100 text-yellow-500 flex items-center justify-center text-xl font-bold mx-auto mb-4">2</div>
+                  <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-xl font-bold mx-auto mb-4">2</div>
                   <h3 className="text-lg font-medium text-gray-900 mb-2">Connectez WhatsApp</h3>
                   <p className="text-gray-600">Envoyez un message à notre numéro WhatsApp pour activer votre compte</p>
                 </div>
                 
                 <div className="text-center">
-                  <div className="w-12 h-12 rounded-full bg-yellow-100 text-yellow-500 flex items-center justify-center text-xl font-bold mx-auto mb-4">3</div>
+                  <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-xl font-bold mx-auto mb-4">3</div>
                   <h3 className="text-lg font-medium text-gray-900 mb-2">Commencez à apprendre</h3>
                   <p className="text-gray-600">Posez vos questions et recevez des réponses instantanées adaptées à votre niveau</p>
                 </div>
@@ -218,11 +218,11 @@ const AirtelChat = () => {
                   <div
                     key={plan.id}
                     className={`bg-white rounded-xl shadow-lg overflow-hidden ${
-                      plan.id === 'weekly' ? 'ring-2 ring-yellow-500 transform scale-105' : ''
+                      plan.id === 'weekly' ? 'ring-2 ring-red-600 transform scale-105' : ''
                     }`}
                   >
                     {plan.id === 'weekly' && (
-                      <div className="bg-yellow-500 text-white text-center py-2 text-sm font-medium">
+                      <div className="bg-red-600 text-white text-center py-2 text-sm font-medium">
                         Plus populaire
                       </div>
                     )}
@@ -256,7 +256,7 @@ const AirtelChat = () => {
                         onClick={() => handleSubscribe(plan.id)}
                         className={`w-full px-6 py-3 rounded-lg flex items-center justify-center gap-2 ${
                           plan.id === 'weekly'
-                            ? 'bg-yellow-500 text-white hover:bg-yellow-600'
+                            ? 'bg-red-600 text-white hover:bg-red-700'
                             : 'bg-gray-900 text-white hover:bg-gray-800'
                         } transition-colors shadow-sm`}
                       >
@@ -283,7 +283,7 @@ const AirtelChat = () => {
                       className="w-12 h-12 rounded-full object-cover"
                     />
                     <div>
-                      <p className="text-gray-600 italic mb-4">"Grâce à MTN Chat, j'ai pu améliorer mes notes en mathématiques. L'assistant m'explique les concepts difficiles de façon simple et claire."</p>
+                      <p className="text-gray-600 italic mb-4">"Grâce à Airtel Chat, j'ai pu améliorer mes notes en mathématiques. L'assistant m'explique les concepts difficiles de façon simple et claire."</p>
                       <p className="font-medium text-gray-900">Aminata D.</p>
                       <p className="text-sm text-gray-500">Élève en Terminale S</p>
                     </div>
@@ -324,7 +324,7 @@ const AirtelChat = () => {
                 </p>
               </div>
               <div className="text-center">
-                <Brain className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
+                <Brain className="w-12 h-12 text-red-600 mx-auto mb-4" />
                 <h3 className="text-lg font-semibold text-gray-900">IA Avancée</h3>
                 <p className="mt-2 text-gray-600">
                   Bénéficiez d'une assistance intelligente et personnalisée
@@ -338,13 +338,13 @@ const AirtelChat = () => {
               
               <div className="space-y-6">
                 <div>
-                  <h4 className="text-lg font-medium text-gray-900 mb-2">Comment puis-je accéder à MTN Chat?</h4>
+                  <h4 className="text-lg font-medium text-gray-900 mb-2">Comment puis-je accéder à Airtel Chat?</h4>
                   <p className="text-gray-600">Après votre abonnement, vous recevrez un message WhatsApp avec les instructions. Il vous suffit de répondre "I want to learn" pour commencer à utiliser le service.</p>
                 </div>
                 
                 <div>
                   <h4 className="text-lg font-medium text-gray-900 mb-2">Quelles matières sont couvertes?</h4>
-                  <p className="text-gray-600">MTN Chat couvre toutes les matières principales du programme scolaire: mathématiques, physique-chimie, SVT, français, anglais, histoire-géographie, philosophie, etc.</p>
+                  <p className="text-gray-600">Airtel Chat couvre toutes les matières principales du programme scolaire: mathématiques, physique-chimie, SVT, français, anglais, histoire-géographie, philosophie, etc.</p>
                 </div>
                 
                 <div>

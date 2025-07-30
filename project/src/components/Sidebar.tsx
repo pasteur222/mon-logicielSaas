@@ -38,7 +38,7 @@ const Sidebar: React.FC<SidebarProps> = ({ menuItems }) => {
   return (
     <div className="w-64 bg-white border-r border-gray-200 px-4 py-6">
       <div className="flex items-center gap-3 mb-8">
-        <Brain className="w-8 h-8 text-yellow-500" />
+        <Brain className="w-8 h-8 text-red-600" />
         <span className="text-xl font-semibold">{settings.app_name}</span>
       </div>
       
@@ -50,7 +50,7 @@ const Sidebar: React.FC<SidebarProps> = ({ menuItems }) => {
             className={({ isActive }) =>
               `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
                 isActive
-                  ? 'bg-yellow-50 text-yellow-600'
+                  ? 'bg-red-50 text-red-600'
                   : 'text-gray-600 hover:bg-gray-50'
               }`
             }

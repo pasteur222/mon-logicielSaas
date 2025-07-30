@@ -691,7 +691,7 @@ const Settings = () => {
                     <button
                       onClick={handleSaveGroqConfig}
                       disabled={groqLoading || !groqApiKey}
-                      className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 disabled:opacity-50"
+                      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
                     >
                       {groqLoading ? 'Enregistrement...' : 'Enregistrer la configuration'}
                     </button>

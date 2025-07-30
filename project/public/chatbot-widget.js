@@ -897,7 +897,7 @@
       window.mtnChatbotInstance = widget;
       
       // Expose global API for advanced users
-      window.MTNGPTChatbot = {
+      window.AirtelGPTChatbot = {
         open: () => widget.openWidget(),
         close: () => widget.closeWidget(),
         sendMessage: (message) => {
@@ -914,9 +914,9 @@
         })
       };
 
-      console.log('MTN GPT Chatbot Widget initialized successfully');
+      console.log('Airtel GPT Chatbot Widget initialized successfully');
     } catch (error) {
-      console.error('Failed to initialize MTN GPT Chatbot Widget:', error);
+      console.error('Failed to initialize Airtel GPT Chatbot Widget:', error);
     }
   }
 

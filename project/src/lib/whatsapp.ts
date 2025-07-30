@@ -443,23 +443,52 @@ export async function sendWhatsAppResponse(to: string, message: string, media?: 
     // Get WhatsApp configuration, prioritizing user-specific config if userId is provided
     const { accessToken, phoneNumberId } = await getWhatsAppConfig(userId);
 
+    // Prepare message payload
+    const messagePayload: any = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: to,
+      type: media ? media.type : 'text'
+    };
+
+    // Handle media messages
+    if (media && media.url) {
+      console.log('🖼️ [WHATSAPP-RESPONSE] Preparing media message:', {
+        type: media.type,
+        url: media.url.substring(0, 50) + '...'
+      });
+      
+      // Validate media URL
+      try {
+        new URL(media.url);
+        
+        // Test URL accessibility
+        const urlTest = await fetch(media.url, { method: 'HEAD' });
+        if (!urlTest.ok) {
+          throw new Error(`Media URL not accessible: ${urlTest.status}`);
+        }
+        
+        messagePayload[media.type] = { link: media.url };
+        
+        // Add caption if there's text
+        if (sanitizedMessage && sanitizedMessage.trim()) {
+          messagePayload[media.type].caption = sanitizedMessage;
+        }
+      } catch (urlError) {
+        console.error('❌ [WHATSAPP-RESPONSE] Media URL validation failed:', urlError);
+        throw new Error(`Invalid media URL: ${urlError.message}`);
+      }
+    } else {
+      messagePayload.text = { body: sanitizedMessage };
+    }
+
     const response = await fetch(`${WHATSAPP_API_URL}/${phoneNumberId}/messages`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: to,
-        type: media ? media.type : 'text',
-        ...(media ? {
-          [media.type]: { url: media.url }
-        } : {
-          text: { body: sanitizedMessage }
-        })
-      })
+      body: JSON.stringify(messagePayload)
     });
 
     if (!response.ok) {
@@ -480,7 +509,7 @@ export async function sendWhatsAppResponse(to: string, message: string, media?: 
     await supabase.from('message_logs').insert({
       status: 'sent',
       phone_number: to,
-      message_preview: sanitizedMessage.substring(0, 100),
+      message_preview: media ? `[${media.type.toUpperCase()}] ${sanitizedMessage.substring(0, 80)}` : sanitizedMessage.substring(0, 100),
       message_id: messageId,
       created_at: new Date().toISOString()
     });
@@ -714,7 +743,44 @@ export async function sendWhatsAppMessages(
               type: msg.media.type,
               url: msg.media.url.substring(0, 50) + '...'
             });
-            messagePayload[msg.media.type] = { url: msg.media.url };
+            
+            // Validate URL before sending
+            try {
+              new URL(msg.media.url);
+              
+              // Test URL accessibility
+              const urlTest = await fetch(msg.media.url, { 
+                method: 'HEAD',
+                headers: {
+                  'User-Agent': 'WhatsApp-Media-Validator/1.0'
+                }
+              });
+              
+              if (!urlTest.ok) {
+                throw new Error(`Media URL not accessible: ${urlTest.status} ${urlTest.statusText}`);
+              }
+              
+              const contentType = urlTest.headers.get('content-type');
+              console.log(`✅ [WHATSAPP-SEND] Media URL validated:`, {
+                url: msg.media.url,
+                contentType,
+                status: urlTest.status
+              });
+              
+              messagePayload[msg.media.type] = { link: msg.media.url };
+              
+              // Add caption if there's text content
+              if (msg.message && msg.message.trim()) {
+                messagePayload[msg.media.type].caption = msg.message;
+                console.log(`📝 [WHATSAPP-SEND] Added caption to ${msg.media.type} message`);
+              }
+            } catch (urlError) {
+              console.error(`❌ [WHATSAPP-SEND] Invalid media URL:`, {
+                url: msg.media.url,
+                error: urlError.message
+              });
+              throw new Error(`Invalid media URL: ${urlError.message}`);
+            }
           } else {
             messagePayload.text = { body: msg.message };
           }

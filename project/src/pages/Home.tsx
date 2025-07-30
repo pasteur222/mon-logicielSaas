@@ -86,7 +86,7 @@ const Home = () => {
             <div className="lg:w-1/2 lg:pr-12">
               <h1 className="text-4xl font-extrabold text-gray-900 sm:text-5xl sm:tracking-tight lg:text-6xl">
                 <span className="block">Révolutionnez votre</span>
-                <span className="block text-yellow-500">communication et apprentissage</span>
+                <span className="block text-red-600">communication et apprentissage</span>
               </h1>
               <p className="mt-6 text-xl text-gray-500 max-w-3xl">
                 {settings.app_name} combine l'intelligence artificielle avancée avec la puissance de WhatsApp pour transformer votre expérience éducative et professionnelle.
@@ -94,14 +94,14 @@ const Home = () => {
               <div className="mt-10 flex flex-wrap gap-4">
                 <button
                   onClick={() => navigate('/login')}
-                  className="px-8 py-3 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors shadow-md flex items-center gap-2"
+                  className="px-8 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors shadow-md flex items-center gap-2"
                 >
                   Se connecter
                   <ArrowRight className="w-4 h-4" />
                 </button>
                 <button
                   onClick={scrollToSubscription}
-                  className="px-8 py-3 bg-white text-yellow-500 border-2 border-yellow-500 rounded-lg hover:bg-yellow-50 transition-colors shadow-sm"
+                  className="px-8 py-3 bg-white text-red-600 border-2 border-red-600 rounded-lg hover:bg-red-50 transition-colors shadow-sm"
                 >
                   S'inscrire
                 </button>
@@ -109,7 +109,7 @@ const Home = () => {
             </div>
             <div className="mt-10 lg:mt-0 lg:w-1/2">
               <div className="relative">
-                <div className="absolute inset-0 bg-gradient-to-r from-yellow-400 to-yellow-500 rounded-2xl transform rotate-3 scale-105 opacity-10"></div>
+                <div className="absolute inset-0 bg-gradient-to-r from-red-500 to-red-600 rounded-2xl transform rotate-3 scale-105 opacity-10"></div>
                 <img 
                   src="https://images.pexels.com/photos/3861969/pexels-photo-3861969.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2" 
                   alt="MTN GPT Platform" 
@@ -126,19 +126,19 @@ const Home = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
             <div className="text-center">
-              <div className="text-4xl font-bold text-yellow-500">24/7</div>
+              <div className="text-4xl font-bold text-red-600">24/7</div>
               <p className="mt-2 text-gray-600">Assistance disponible</p>
             </div>
             <div className="text-center">
-              <div className="text-4xl font-bold text-yellow-500">10k+</div>
+              <div className="text-4xl font-bold text-red-600">10k+</div>
               <p className="mt-2 text-gray-600">Utilisateurs actifs</p>
             </div>
             <div className="text-center">
-              <div className="text-4xl font-bold text-yellow-500">95%</div>
+              <div className="text-4xl font-bold text-red-600">95%</div>
               <p className="mt-2 text-gray-600">Taux de satisfaction</p>
             </div>
             <div className="text-center">
-              <div className="text-4xl font-bold text-yellow-500">14</div>
+              <div className="text-4xl font-bold text-red-600">14</div>
               <p className="mt-2 text-gray-600">Pays Africains couverts</p>
             </div>
           </div>
@@ -159,7 +159,7 @@ const Home = () => {
             {[
               {
                 icon: MessageCircle,
-                title: 'MTN Chat',
+                title: 'Airtel Chat',
                 description: 'Assistant virtuel intelligent pour la préparation aux examens',
                 path: '/airtel-chat',
                 color: 'blue'
@@ -184,10 +184,10 @@ const Home = () => {
                 onClick={() => navigate(feature.path)}
                 className="bg-white rounded-xl shadow-sm p-8 hover:shadow-md transition-shadow cursor-pointer transform hover:-translate-y-1 transition-transform duration-300"
               >
-                <feature.icon className={`w-12 h-12 text-${feature.color === 'yellow' ? 'yellow-500' : feature.color + '-600'} mb-6`} />
+                <feature.icon className={`w-12 h-12 text-${feature.color === 'yellow' ? 'red-600' : feature.color + '-600'} mb-6`} />
                 <h3 className="text-xl font-semibold text-gray-900 mb-4">{feature.title}</h3>
                 <p className="text-gray-600 mb-6">{feature.description}</p>
-                <div className="flex items-center text-yellow-500 font-medium">
+                <div className="flex items-center text-red-600 font-medium">
                   <span>En savoir plus</span>
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </div>
@@ -294,7 +294,7 @@ const Home = () => {
                       onClick={() => handleSubscribe(plan.id)}
                       className={`w-full px-6 py-3 rounded-lg flex items-center justify-center gap-2 ${
                         plan.id === 'pro'
-                          ? 'bg-yellow-500 text-white hover:bg-yellow-600'
+                          ? 'bg-red-600 text-white hover:bg-red-700'
                           : 'bg-gray-900 text-white hover:bg-gray-800'
                       } transition-colors shadow-sm`}
                     >
@@ -365,7 +365,7 @@ const Home = () => {
       </div>
 
       {/* CTA Section */}
-      <div className="py-16 bg-yellow-500">
+      <div className="py-16 bg-red-600">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="lg:flex lg:items-center lg:justify-between">
             <div className="lg:w-3/5">
@@ -380,13 +380,13 @@ const Home = () => {
               <div className="flex flex-col sm:flex-row gap-4">
                 <button
                   onClick={() => navigate('/airtel-chat')}
-                  className="px-8 py-3 bg-white text-yellow-500 rounded-lg hover:bg-gray-100 transition-colors shadow-md font-medium"
+                  className="px-8 py-3 bg-white text-red-600 rounded-lg hover:bg-gray-100 transition-colors shadow-md font-medium"
                 >
                   Abonnement Éducatif
                 </button>
                 <button
                   onClick={() => navigate('/professional-subscription')}
-                  className="px-8 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors shadow-md font-medium"
+                  className="px-8 py-3 bg-red-700 text-white rounded-lg hover:bg-red-800 transition-colors shadow-md font-medium"
                 >
                   Abonnement Professionnel
                 </button>
@@ -408,7 +408,7 @@ const Home = () => {
               </p>
             </div>
             <div className="text-center">
-              <Zap className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
+              <Zap className="w-12 h-12 text-red-600 mx-auto mb-4" />
               <h3 className="text-lg font-semibold text-gray-900">Rapide</h3>
               <p className="mt-2 text-gray-600">
                 Une plateforme optimisée pour des performances maximales et des réponses instantanées
@@ -437,17 +437,17 @@ const Home = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div className="bg-white p-8 rounded-xl shadow-sm text-center">
-              <Phone className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
+              <Phone className="w-12 h-12 text-red-600 mx-auto mb-4" />
               <h3 className="text-lg font-semibold text-gray-900">Téléphone</h3>
               <p className="mt-2 text-gray-600">{settings.contact_phone}</p>
             </div>
             <div className="bg-white p-8 rounded-xl shadow-sm text-center">
-              <Mail className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
+              <Mail className="w-12 h-12 text-red-600 mx-auto mb-4" />
               <h3 className="text-lg font-semibold text-gray-900">Email</h3>
               <p className="mt-2 text-gray-600">{settings.contact_email}</p>
             </div>
             <div className="bg-white p-8 rounded-xl shadow-sm text-center">
-              <MapPin className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
+              <MapPin className="w-12 h-12 text-red-600 mx-auto mb-4" />
               <h3 className="text-lg font-semibold text-gray-900">Adresse</h3>
               <p className="mt-2 text-gray-600">{settings.contact_address}</p>
             </div>

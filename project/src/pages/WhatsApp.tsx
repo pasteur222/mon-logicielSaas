@@ -205,10 +205,33 @@ const WhatsApp = () => {
         phoneNumber: phoneNumber!,
         message: finalMessage,
         variables: variables.length > 0 ? variables : undefined,
-        media: mediaUrls.length > 0 ? {
-          type: 'image' as const,
-          url: mediaUrls[0]
-        } : undefined
+        media: mediaUrls.length > 0 ? (() => {
+          const mediaUrl = mediaUrls[0];
+          // Determine media type from URL or file extension
+          const mediaFile = mediaFiles[0];
+          let mediaType: 'image' | 'video' | 'document' = 'image';
+          
+          if (mediaFile) {
+            if (mediaFile.type.startsWith('video/')) {
+              mediaType = 'video';
+            } else if (mediaFile.type === 'application/pdf') {
+              mediaType = 'document';
+            } else {
+              mediaType = 'image';
+            }
+          }
+          
+          console.log('📎 [WHATSAPP-SEND] Preparing media:', {
+            type: mediaType,
+            url: mediaUrl,
+            fileType: mediaFile?.type
+          });
+          
+          return {
+            type: mediaType,
+            url: mediaUrl
+          };
+        })() : undefined
       }));
 
       const results = await sendWhatsAppMessages(messageData, user?.id);
@@ -349,9 +372,19 @@ const WhatsApp = () => {
       const uploadedUrls: string[] = [];
 
       for (const file of files) {
-        // Validate file type and size
-        if (!file.type.startsWith('image/') && !file.type.startsWith('video/') && file.type !== 'application/pdf') {
-          setError('Only images, videos, and PDF files are supported');
+        // Validate file type and size with explicit MIME type checking
+        const allowedImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+        const allowedVideoTypes = ['video/mp4', 'video/mov', 'video/avi', 'video/webm'];
+        const allowedDocTypes = ['application/pdf'];
+        
+        const isValidType = [
+          ...allowedImageTypes,
+          ...allowedVideoTypes,
+          ...allowedDocTypes
+        ].includes(file.type);
+        
+        if (!isValidType) {
+          setError(`Unsupported file type: ${file.type}. Supported types: JPEG, PNG, GIF, WebP, MP4, MOV, PDF`);
           continue;
         }
 
@@ -360,20 +393,55 @@ const WhatsApp = () => {
           continue;
         }
 
-        // Upload to Supabase storage
-        const fileName = `${Date.now()}_${file.name}`;
+        // Generate filename with proper extension based on MIME type
+        const timestamp = Date.now();
+        const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+        const fileName = `${timestamp}_${sanitizedName}`;
+        
+        console.log('📤 [MEDIA-UPLOAD] Uploading file:', {
+          fileName,
+          fileType: file.type,
+          fileSize: file.size,
+          originalName: file.name
+        });
+        
+        // Upload to Supabase storage with explicit content type
         const { data, error } = await supabase.storage
           .from('whatsapp-media')
-          .upload(fileName, file);
+          .upload(fileName, file, {
+            contentType: file.type,
+            cacheControl: '3600',
+            upsert: false
+          });
 
         if (error) throw error;
 
-        // Get public URL
+        // Get public URL and validate it
         const { data: publicUrlData } = supabase.storage
           .from('whatsapp-media')
           .getPublicUrl(fileName);
 
-        uploadedUrls.push(publicUrlData.publicUrl);
+        const publicUrl = publicUrlData.publicUrl;
+        
+        // Validate the URL is accessible
+        try {
+          const urlCheck = await fetch(publicUrl, { method: 'HEAD' });
+          if (!urlCheck.ok) {
+            throw new Error(`URL not accessible: ${urlCheck.status}`);
+          }
+          
+          console.log('✅ [MEDIA-UPLOAD] File uploaded and URL validated:', {
+            fileName,
+            publicUrl,
+            contentType: urlCheck.headers.get('content-type')
+          });
+          
+          uploadedUrls.push(publicUrl);
+        } catch (urlError) {
+          console.error('❌ [MEDIA-UPLOAD] URL validation failed:', urlError);
+          setError(`Failed to validate uploaded file URL: ${urlError.message}`);
+          continue;
+        }
       }
 
       setMediaFiles(prev => [...prev, ...files]);

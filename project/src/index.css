@@ -3,8 +3,8 @@
 @tailwind utilities;
 
 :root {
-  --primary-color: theme('colors.yellow.500');
-  --primary-hover: theme('colors.yellow.600');
+  --primary-color: theme('colors.red.600');
+  --primary-hover: theme('colors.red.700');
   font-size: 16px;
 }
 
@@ -18,12 +18,22 @@
   --primary-hover: theme('colors.green.700');
 }
 
-:root[data-theme-color="yellow"] {
-  --primary-color: theme('colors.yellow.500');
-  --primary-hover: theme('colors.yellow.600');
+:root[data-theme-color="red"] {
+  --primary-color: theme('colors.red.600');
+  --primary-hover: theme('colors.red.700');
 }
 
-:root[data-theme-color="red"] {
+:root[data-theme-color="yellow"] {
+  --primary-color: theme('colors.red.600');
+  --primary-hover: theme('colors.red.700');
+}
+
+:root[data-theme-color="orange"] {
+  --primary-color: theme('colors.orange.600');
+  --primary-hover: theme('colors.orange.700');
+}
+
+:root[data-theme-color="airtel"] {
   --primary-color: theme('colors.red.600');
   --primary-hover: theme('colors.red.700');
 }
