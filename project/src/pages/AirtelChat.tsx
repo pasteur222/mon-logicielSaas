@@ -108,7 +108,7 @@ const AirtelChat = () => {
             <div className="text-center mb-12">
               <div className="flex items-center justify-center gap-3 mb-4">
                 <Brain className="w-12 h-12 text-yellow-500" />
-                <h1 className="text-4xl font-bold text-gray-900">Airtel Chat Éducatif</h1>
+                <h1 className="text-4xl font-bold text-gray-900">MTN Chat Éducatif</h1>
               </div>
               <p className="text-xl text-gray-600 max-w-3xl mx-auto">
                 Votre assistant personnel pour la préparation aux examens d'État et concours
