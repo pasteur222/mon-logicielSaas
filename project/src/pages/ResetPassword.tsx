@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createClient } from '@supabase/supabase-js';
-import { Brain, Loader2, ArrowLeft, Eye, EyeOff } from 'lucide-react';
+import { Loader2, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { getAuthErrorMessage } from '../utils/authErrors';
 
 const supabase = createClient(
@@ -64,7 +64,11 @@ const ResetPassword = () => {
       <div className="flex-1 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
         <div className="sm:mx-auto sm:w-full sm:max-w-md">
           <div className="flex items-center justify-center gap-2">
-            <Brain className="w-12 h-12 text-red-600" />
+            <svg className="w-12 h-12" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="50" cy="50" r="45" fill="#E60012"/>
+              <path d="M25 35h50v30H25z" fill="white"/>
+              <text x="50" y="55" textAnchor="middle" fill="#E60012" fontSize="16" fontWeight="bold">airtel</text>
+            </svg>
             <h2 className="text-3xl font-bold text-gray-900">Airtel GPT</h2>
           </div>
           <h2 className="mt-6 text-center text-2xl font-bold text-gray-900">

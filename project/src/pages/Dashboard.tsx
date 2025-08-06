@@ -212,7 +212,7 @@ const Dashboard = () => {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-500"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600"></div>
       </div>
     );
   }
@@ -258,17 +258,6 @@ const Dashboard = () => {
         >
           <MessageSquare className="w-5 h-5" />
           WhatsApp
-        </button>
-        <button
-          onClick={() => setActiveModule('education')}
-          className={`px-4 py-2 rounded-lg flex items-center gap-2 ${
-            activeModule === 'education' 
-              ? 'bg-blue-100 text-blue-800 border border-blue-200' 
-              : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
-          }`}
-        >
-          <BookOpen className="w-5 h-5" />
-          Éducation
         </button>
         <button
           onClick={() => setActiveModule('customerService')}
@@ -333,51 +322,6 @@ const Dashboard = () => {
       )}
 
       {/* Éducation */}
-      {activeModule === 'education' && (
-        <div className="mb-8">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <BookOpen className="w-5 h-5 text-blue-600" />
-            Éducation
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            <div className="bg-white rounded-xl shadow-sm p-6">
-              <div className="flex items-center gap-3 mb-2">
-                <Users className="w-5 h-5 text-blue-600" />
-                <h3 className="font-medium text-gray-900">Étudiants actifs</h3>
-              </div>
-              <p className="text-2xl font-semibold text-gray-900">{stats.education.activeStudents}</p>
-            </div>
-            <div className="bg-white rounded-xl shadow-sm p-6">
-              <div className="flex items-center gap-3 mb-2">
-                <Brain className="w-5 h-5 text-green-600" />
-                <h3 className="font-medium text-gray-900">Sessions totales</h3>
-              </div>
-              <p className="text-2xl font-semibold text-gray-900">{stats.education.totalSessions}</p>
-            </div>
-            <div className="bg-white rounded-xl shadow-sm p-6">
-              <div className="flex items-center gap-3 mb-2">
-                <Trophy className="w-5 h-5 text-yellow-500" />
-                <h3 className="font-medium text-gray-900">Score moyen</h3>
-              </div>
-              <p className="text-2xl font-semibold text-gray-900">{stats.education.averageScore.toFixed(1)}%</p>
-            </div>
-            <div className="bg-white rounded-xl shadow-sm p-6">
-              <div className="flex items-center gap-3 mb-2">
-                <BarChart2 className="w-5 h-5 text-yellow-500" />
-                <h3 className="font-medium text-gray-900">Matières populaires</h3>
-              </div>
-              <div className="space-y-2 mt-4">
-                {Object.entries(stats.education.subjectDistribution).map(([subject, count]) => (
-                  <div key={subject} className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">{subject}</span>
-                    <span className="text-sm font-medium">{count}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Service Client */}
       {activeModule === 'customerService' && (

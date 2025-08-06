@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Check, Brain, MessageSquare, BookOpen, Target, Clock, Calendar, CreditCard, ArrowRight, Users, Zap, Award, Repeat } from 'lucide-react';
+import { Check, MessageSquare, BookOpen, Target, Clock, Calendar, CreditCard, ArrowRight, Users, Zap, Award, Repeat } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import BackButton from '../components/BackButton';
 import SubscriptionPayment from '../components/SubscriptionPayment';
@@ -107,7 +107,11 @@ const AirtelChat = () => {
           <>
             <div className="text-center mb-12">
               <div className="flex items-center justify-center gap-3 mb-4">
-                <Brain className="w-12 h-12 text-yellow-500" />
+                <svg className="w-12 h-12" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="50" cy="50" r="45" fill="#E60012"/>
+                  <path d="M25 35h50v30H25z" fill="white"/>
+                  <text x="50" y="55" textAnchor="middle" fill="#E60012" fontSize="16" fontWeight="bold">airtel</text>
+                </svg>
                 <h1 className="text-4xl font-bold text-gray-900">MTN Chat Éducatif</h1>
               </div>
               <p className="text-xl text-gray-600 max-w-3xl mx-auto">
@@ -324,7 +328,11 @@ const AirtelChat = () => {
                 </p>
               </div>
               <div className="text-center">
-                <Brain className="w-12 h-12 text-red-600 mx-auto mb-4" />
+                <svg className="w-12 h-12 mx-auto mb-4" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="50" cy="50" r="45" fill="#E60012"/>
+                  <path d="M25 35h50v30H25z" fill="white"/>
+                  <text x="50" y="55" textAnchor="middle" fill="#E60012" fontSize="16" fontWeight="bold">airtel</text>
+                </svg>
                 <h3 className="text-lg font-semibold text-gray-900">IA Avancée</h3>
                 <p className="mt-2 text-gray-600">
                   Bénéficiez d'une assistance intelligente et personnalisée

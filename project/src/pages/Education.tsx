@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Phone, Send, Brain, BookOpen, GraduationCap, BarChart2, Clock, AlertCircle, CreditCard } from 'lucide-react';
+import { Phone, Send, BookOpen, GraduationCap, BarChart2, Clock, AlertCircle, CreditCard } from 'lucide-react';
 import { analyzeStudentMessage, getOrCreateStudentProfile, startEducationSession, updateSessionStats, getStudentAnalytics } from '../lib/education';
 import BackButton from '../components/BackButton';
 import GroqApiCheck from '../components/GroqApiCheck';
@@ -112,7 +112,11 @@ const Education = () => {
             <div className="p-6 bg-white border-b border-gray-200 shadow-sm">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <Brain className="w-8 h-8 text-red-600" />
+                  <svg className="w-8 h-8" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="50" cy="50" r="45" fill="#E60012"/>
+                    <path d="M25 35h50v30H25z" fill="white"/>
+                    <text x="50" y="55" textAnchor="middle" fill="#E60012" fontSize="16" fontWeight="bold">airtel</text>
+                  </svg>
                   <div>
                     <h1 className="text-xl font-semibold text-gray-900">Assistant Éducatif WhatsApp</h1>
                     <p className="text-sm text-gray-500 max-w-3xl">Préparation BEPC, BAC et aux concours suivants : FSSA, ENSAF, ENS, ENSP, ISG, ENAM, INJS, ISEPS, CFI-CIRAS, CASP, INTS, ENI, ENMA, JJL, ENEF</p>
@@ -148,7 +152,11 @@ const Education = () => {
 
               <div className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md transition-shadow">
                 <div className="flex items-center gap-3 mb-2">
-                  <Brain className="w-5 h-5 text-green-600" />
+                  <svg className="w-5 h-5" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="50" cy="50" r="45" fill="#22c55e"/>
+                    <path d="M25 35h50v30H25z" fill="white"/>
+                    <text x="50" y="55" textAnchor="middle" fill="#22c55e" fontSize="16" fontWeight="bold">airtel</text>
+                  </svg>
                   <h3 className="font-medium text-gray-900">Exercices résolus</h3>
                 </div>
                 <p className="text-2xl font-semibold text-gray-900">{stats.exercisesSolved}</p>

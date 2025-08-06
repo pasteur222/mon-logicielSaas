@@ -30,6 +30,7 @@ import TermsOfUse from './pages/TermsOfUse';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import LegalNotice from './pages/LegalNotice';
 import GroqSetup from './pages/GroqSetup';
+import BusinessPayment from './pages/BusinessPayment';
 import ErrorBoundary from './components/ErrorBoundary';
 import { supabase } from './lib/supabase';
 
@@ -37,7 +38,6 @@ function App() {
   const menuItems = [
     { icon: MessageSquare, label: 'WhatsApp', path: '/whatsapp', restricted: false },
     { icon: MessageSquare, label: 'Customer Service', path: '/customer-service', restricted: false },
-    { icon: BookOpen, label: 'Education', path: '/education', restricted: false },
     { icon: GamepadIcon, label: 'Quiz', path: '/quiz', restricted: false },
     { icon: CreditCard, label: 'Payments', path: '/payments', restricted: false },
     { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard', restricted: false },
@@ -115,7 +115,6 @@ function App() {
               <Route path="/login" element={<><Navigation /><Login /></>} />
               <Route path="/register" element={<><Navigation /><Register /></>} />
               <Route path="/reset-password" element={<><Navigation /><ResetPassword /></>} />
-              <Route path="/airtel-chat" element={<><Navigation /><AirtelChat /></>} />
               <Route path="/create-admin" element={<CreateAdmin />} />
               <Route path="/whatsapp-verification" element={<><Navigation /><WhatsAppVerification /></>} />
               <Route path="/terms-of-use" element={<TermsOfUse />} />
@@ -124,6 +123,9 @@ function App() {
 
               {/* Groq API Setup */}
               <Route path="/groq-setup" element={<GroqSetup />} />
+              
+              {/* Business Payment */}
+              <Route path="/business-payment/:planId" element={<BusinessPayment />} />
 
               {/* All modules accessible to authenticated users */}
               <Route path="/whatsapp" element={
@@ -144,16 +146,6 @@ function App() {
                     <Sidebar menuItems={menuItems} />
                     <main className="flex-1 overflow-y-auto">
                       <CustomerService />
-                    </main>
-                  </div>
-                </PrivateRoute>
-              } />
-              <Route path="/education" element={
-                <PrivateRoute>
-                  <div className="flex h-screen bg-gray-50">
-                    <Sidebar menuItems={menuItems} />
-                    <main className="flex-1 overflow-y-auto">
-                      <Education />
                     </main>
                   </div>
                 </PrivateRoute>

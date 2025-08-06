@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Brain, Shield, Zap, Award, MessageSquare, BookOpen, GamepadIcon, ChevronRight, Phone, Mail, MapPin, Heart, Globe, MessageCircle, ArrowRight, CheckCircle, Users, BarChart2, ChevronDown, Repeat } from 'lucide-react';
+import { Shield, Zap, Award, MessageSquare, BookOpen, GamepadIcon, ChevronRight, Phone, Mail, MapPin, Heart, Globe, MessageCircle, ArrowRight, CheckCircle, Users, BarChart2, ChevronDown, Repeat } from 'lucide-react';
 import { BUSINESS_PLANS } from '../lib/business-subscription';
 import { supabase, getPricing } from '../lib/supabase';
 import { useAppSettings } from '../components/AppSettingsContext';
@@ -161,21 +161,21 @@ const Home = () => {
                 icon: MessageCircle,
                 title: 'Airtel Chat',
                 description: 'Assistant virtuel intelligent pour la préparation aux examens',
-                path: '/airtel-chat',
+                path: '/features',
                 color: 'blue'
               },
               {
                 icon: MessageSquare,
                 title: 'Chat WhatsApp Intégré',
                 description: 'Communiquez facilement avec vos clients via WhatsApp',
-                path: '/whatsapp',
+                path: '/features',
                 color: 'green'
               },
               {
                 icon: BookOpen,
                 title: 'Service Client Intelligent',
                 description: 'Un assistant virtuel disponible 24/7',
-                path: '/customer-service',
+                path: '/features',
                 color: 'yellow'
               }
             ].map((feature, index) => (
@@ -222,11 +222,11 @@ const Home = () => {
               <div
                 key={plan.id}
                 className={`bg-white rounded-xl shadow-lg overflow-hidden border ${
-                  plan.id === 'pro' ? 'border-yellow-200 ring-2 ring-yellow-500 transform scale-105' : 'border-gray-200'
+                  plan.id === 'pro' ? 'border-red-200 ring-2 ring-red-600 transform scale-105' : 'border-gray-200'
                 }`}
               >
                 {plan.id === 'pro' && (
-                  <div className="bg-yellow-500 text-white text-center py-2 text-sm font-medium">
+                  <div className="bg-red-600 text-white text-center py-2 text-sm font-medium">
                     Plus populaire
                   </div>
                 )}
@@ -379,16 +379,10 @@ const Home = () => {
             <div className="mt-8 lg:mt-0 lg:w-2/5 lg:flex lg:justify-end">
               <div className="flex flex-col sm:flex-row gap-4">
                 <button
-                  onClick={() => navigate('/airtel-chat')}
-                  className="px-8 py-3 bg-white text-red-600 rounded-lg hover:bg-gray-100 transition-colors shadow-md font-medium"
-                >
-                  Abonnement Éducatif
-                </button>
-                <button
-                  onClick={() => navigate('/professional-subscription')}
+                  onClick={() => navigate('/business-payment/basic')}
                   className="px-8 py-3 bg-red-700 text-white rounded-lg hover:bg-red-800 transition-colors shadow-md font-medium"
                 >
-                  Abonnement Professionnel
+                  S'abonner maintenant
                 </button>
               </div>
             </div>
@@ -461,7 +455,11 @@ const Home = () => {
           {/* Logo and Description */}
           <div className="text-center mb-12">
             <div className="flex items-center justify-center gap-2 mb-4">
-              <Brain className="w-8 h-8 text-yellow-500" />
+              <svg className="w-8 h-8" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="50" cy="50" r="45" fill="#E60012"/>
+                <path d="M25 35h50v30H25z" fill="white"/>
+                <text x="50" y="55" textAnchor="middle" fill="#E60012" fontSize="16" fontWeight="bold">airtel</text>
+              </svg>
               <span className="text-xl font-semibold">{settings.app_name}</span>
             </div>
             <p className="text-gray-400 max-w-2xl mx-auto">

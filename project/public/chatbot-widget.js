@@ -481,8 +481,10 @@
       widget.className = 'mtn-chatbot-widget';
       widget.innerHTML = `
         <button class="mtn-chatbot-button" id="mtn-chatbot-toggle" aria-label="Ouvrir le chat">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M20 2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h4l4 4 4-4h4c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/>
+          <svg viewBox="0 0 100 100" aria-hidden="true">
+            <circle cx="50" cy="50" r="45" fill="#E60012"/>
+            <path d="M25 35h50v30H25z" fill="white"/>
+            <text x="50" y="55" text-anchor="middle" fill="#E60012" font-size="16" font-weight="bold">airtel</text>
           </svg>
           <div class="mtn-chatbot-notification" id="mtn-chatbot-notification" style="display: none;">!</div>
         </button>

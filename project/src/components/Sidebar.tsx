@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Brain } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppSettings } from './AppSettingsContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -38,7 +37,11 @@ const Sidebar: React.FC<SidebarProps> = ({ menuItems }) => {
   return (
     <div className="w-64 bg-white border-r border-gray-200 px-4 py-6">
       <div className="flex items-center gap-3 mb-8">
-        <Brain className="w-8 h-8 text-red-600" />
+        <svg className="w-8 h-8" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="50" cy="50" r="45" fill="#E60012"/>
+          <path d="M25 35h50v30H25z" fill="white"/>
+          <text x="50" y="55" textAnchor="middle" fill="#E60012" fontSize="16" fontWeight="bold">airtel</text>
+        </svg>
         <span className="text-xl font-semibold">{settings.app_name}</span>
       </div>
       

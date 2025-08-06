@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Brain, HelpCircle, Briefcase, Menu, X, ChevronDown } from 'lucide-react';
+import { HelpCircle, Briefcase, Menu, X, ChevronDown } from 'lucide-react';
 import { useAppSettings } from './AppSettingsContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import LanguageSelector from './LanguageSelector';
@@ -16,7 +16,16 @@ const Navigation = () => {
   const isActive = (path: string) => location.pathname === path;
 
   const scrollToSubscription = () => {
-    navigate('/professional-subscription');
+    if (location.pathname === '/') {
+      // If already on home page, scroll to subscription section
+      const subscriptionSection = document.getElementById('subscription-plans');
+      if (subscriptionSection) {
+        subscriptionSection.scrollIntoView({ behavior: 'smooth' });
+      }
+    } else {
+      // If on different page, navigate to home page with hash
+      navigate('/#subscription-plans');
+    }
   };
 
   return (
@@ -25,7 +34,11 @@ const Navigation = () => {
         <div className="flex justify-between items-center h-16">
           <div className="flex items-center gap-3">
             <Link to="/" className="flex items-center gap-2">
-              <Brain className="w-8 h-8 text-yellow-500" />
+              <svg className="w-8 h-8" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="50" cy="50" r="45" fill="#E60012"/>
+                <path d="M25 35h50v30H25z" fill="white"/>
+                <text x="50" y="55" textAnchor="middle" fill="#E60012" fontSize="16" fontWeight="bold">airtel</text>
+              </svg>
               <span className="text-xl font-semibold text-gray-900">{settings.app_name}</span>
             </Link>
           </div>
@@ -43,26 +56,18 @@ const Navigation = () => {
               
               {dropdownOpen && (
                 <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 z-10">
-                  <Link
-                    to="/professional-subscription"
+                  <button
+                    onClick={() => {
+                      scrollToSubscription();
+                      setDropdownOpen(false);
+                    }}
                     className="block px-3 py-2 mt-2 rounded-lg text-base font-medium text-white bg-red-600 hover:bg-red-700"
-                    onClick={() => setDropdownOpen(false)}
                   >
                     <div className="flex items-center gap-2">
                       <Briefcase className="w-4 h-4 text-yellow-500" />
                       <span>{t('nav.professional')}</span>
                     </div>
-                  </Link>
-                  <Link
-                    to="/airtel-chat"
-                    className="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 rounded-b-lg"
-                    onClick={() => setDropdownOpen(false)}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Brain className="w-4 h-4 text-blue-600" />
-                      <span>{t('nav.educational')}</span>
-                    </div>
-                  </Link>
+                  </button>
                 </div>
               )}
             </div>
@@ -101,7 +106,7 @@ const Navigation = () => {
             
             <button
               onClick={scrollToSubscription}
-              className="px-4 py-2 text-sm font-medium text-white bg-yellow-500 rounded-lg hover:bg-yellow-600 transition-colors shadow-sm"
+              className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors shadow-sm"
             >
               {t('nav.register')}
             </button>
@@ -130,27 +135,18 @@ const Navigation = () => {
       {mobileMenuOpen && (
         <div className="md:hidden bg-white border-t">
           <div className="px-2 pt-2 pb-3 space-y-1">
-            <Link
-              to="/professional-subscription"
+            <button
+              onClick={() => {
+                scrollToSubscription();
+                setMobileMenuOpen(false);
+              }}
               className="block px-3 py-2 mt-2 rounded-lg text-base font-medium text-white bg-red-600 hover:bg-red-700"
-              onClick={() => setMobileMenuOpen(false)}
             >
               <div className="flex items-center gap-2">
                 <Briefcase className="w-5 h-5 text-red-600" />
                 <span>{t('nav.professional')}</span>
               </div>
-            </Link>
-            
-            <Link
-              to="/airtel-chat"
-              className="block px-3 py-2 rounded-lg text-base font-medium text-gray-700 hover:bg-gray-50"
-              onClick={() => setMobileMenuOpen(false)}
-            >
-              <div className="flex items-center gap-2">
-                <Brain className="w-5 h-5 text-red-600" />
-                <span>{t('nav.educational')}</span>
-              </div>
-            </Link>
+            </button>
             
             <Link
               to="/features"
@@ -189,7 +185,7 @@ const Navigation = () => {
               </Link>
               
               <Link
-                to="/professional-subscription"
+                to="/business-payment/basic"
                 className="block px-3 py-2 mt-2 rounded-lg text-base font-medium text-white bg-red-600 hover:bg-red-700"
                 onClick={() => setMobileMenuOpen(false)}
               >

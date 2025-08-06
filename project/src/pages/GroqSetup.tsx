@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Brain, ArrowLeft } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import GroqApiKeySetup from '../components/GroqApiKeySetup';
 
 const GroqSetup: React.FC = () => {
@@ -25,7 +25,11 @@ const GroqSetup: React.FC = () => {
       <div className="max-w-3xl mx-auto px-4 py-12">
         <div className="text-center mb-12">
           <div className="flex items-center justify-center gap-3 mb-4">
-            <Brain className="w-12 h-12 text-yellow-500" />
+            <svg className="w-12 h-12" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="50" cy="50" r="45" fill="#eab308"/>
+              <path d="M25 35h50v30H25z" fill="white"/>
+              <text x="50" y="55" textAnchor="middle" fill="#eab308" fontSize="16" fontWeight="bold">airtel</text>
+            </svg>
             <h1 className="text-3xl font-bold text-gray-900">Groq API Setup</h1>
           </div>
           <p className="text-xl text-gray-600 max-w-2xl mx-auto">
