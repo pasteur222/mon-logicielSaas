@@ -1,5 +1,5 @@
 /**
- * MTN GPT Chatbot Widget
+ * Airtel GPT Chatbot Widget
  * Embeddable customer service chatbot for external websites
  * Version: 2.0.0 - Enhanced with proper session management and security
  */
@@ -11,7 +11,7 @@
   const script = document.currentScript || document.querySelector('script[data-user-id]');
   const config = {
     userId: script?.dataset.userId || '',
-    color: script?.dataset.color || '#ffcc00',
+    color: script?.dataset.color || '#E60012',
     title: script?.dataset.title || 'Service Client',
     position: script?.dataset.position || 'right',
     apiUrl: script?.dataset.apiUrl || 'https://tyeysspawsupdgaowrec.supabase.co/functions/v1/api-chatbot',

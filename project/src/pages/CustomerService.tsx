@@ -53,8 +53,8 @@ const CustomerService = () => {
   const [isCreating, setIsCreating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [chatbotColor, setChatbotColor] = useState('#ffcc00'); // MTN Yellow
-  const [chatbotTitle, setChatbotTitle] = useState('Service Client');
+  const [chatbotColor, setChatbotColor] = useState('#E60012'); // Airtel Red
+  const [chatbotTitle, setChatbotTitle] = useState('Service Client Airtel');
   const [chatbotPosition, setChatbotPosition] = useState('right');
   const [chatbotCode, setChatbotCode] = useState('');
   const [codeCopied, setCodeCopied] = useState(false);
@@ -548,8 +548,8 @@ const CustomerService = () => {
                       type="text"
                       value={chatbotColor}
                       onChange={(e) => setChatbotColor(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
-                      placeholder="#ffcc00"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      placeholder="#E60012"
                     />
                   </div>
                 </div>
@@ -561,7 +561,7 @@ const CustomerService = () => {
                   <select
                     value={chatbotPosition}
                     onChange={(e) => setChatbotPosition(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
                   >
                     <option value="right">Droite</option>
                     <option value="left">Gauche</option>
@@ -600,7 +600,7 @@ const CustomerService = () => {
                           <input
                             type="text"
                             placeholder="Tapez votre message..."
-                            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:outline-none"
+                            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:outline-none"
                             style={{ borderColor: chatbotColor }}
                           />
                           <button className="p-2 rounded-full text-white" style={{ backgroundColor: chatbotColor }}>
@@ -659,7 +659,7 @@ const CustomerService = () => {
                   Documentation
                 </h3>
                 <p className="text-sm text-blue-600">
-                  Le widget de chatbot utilise la même base de connaissances que votre service client. 
+                  Le widget de chatbot Airtel utilise la même base de connaissances que votre service client. 
                   Toutes les modifications apportées à la base de connaissances seront automatiquement 
                   reflétées dans le chatbot de votre site web.
                 </p>

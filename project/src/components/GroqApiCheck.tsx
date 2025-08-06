@@ -65,7 +65,7 @@ const GroqApiCheck: React.FC<GroqApiCheckProps> = ({ children }) => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-500"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600"></div>
       </div>
     );
   }
@@ -75,8 +75,8 @@ const GroqApiCheck: React.FC<GroqApiCheckProps> = ({ children }) => {
       <div className="flex items-center justify-center h-full">
         <div className="bg-white p-8 rounded-xl shadow-lg max-w-md w-full mx-4">
           <div className="flex items-center justify-center mb-6">
-            <div className="bg-yellow-100 p-3 rounded-full">
-              <Key className="w-8 h-8 text-yellow-500" />
+            <div className="bg-red-100 p-3 rounded-full">
+              <Key className="w-8 h-8 text-red-500" />
             </div>
           </div>
           <h2 className="text-xl font-bold text-center text-gray-900 mb-4">
@@ -102,7 +102,7 @@ const GroqApiCheck: React.FC<GroqApiCheckProps> = ({ children }) => {
           </div>
           <button
             onClick={() => navigate('/groq-setup')}
-            className="w-full bg-yellow-500 text-white py-3 px-4 rounded-lg hover:bg-yellow-600 transition-colors shadow-sm"
+            className="w-full bg-red-500 text-white py-3 px-4 rounded-lg hover:bg-red-600 transition-colors shadow-sm"
           >
             Configure Groq API for Enhanced Image Analysis
           </button>

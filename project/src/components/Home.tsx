@@ -100,7 +100,12 @@ const Home = () => {
                   <ArrowRight className="w-4 h-4" />
                 </button>
                 <button
-                  onClick={scrollToSubscription}
+                  onClick={() => {
+                    const subscriptionSection = document.getElementById('subscription-plans');
+                    if (subscriptionSection) {
+                      subscriptionSection.scrollIntoView({ behavior: 'smooth' });
+                    }
+                  }}
                   className="px-8 py-3 bg-white text-red-600 border-2 border-red-600 rounded-lg hover:bg-red-50 transition-colors shadow-sm"
                 >
                   S'inscrire

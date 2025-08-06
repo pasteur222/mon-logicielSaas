@@ -89,7 +89,7 @@ const GroqApiKeySetup: React.FC<GroqApiKeySetupProps> = ({ onComplete }) => {
   return (
     <div className="bg-white rounded-xl shadow-sm p-6">
       <div className="flex items-center gap-3 mb-6">
-        <Key className="w-6 h-6 text-yellow-500" />
+        <Key className="w-6 h-6 text-red-500" />
         <h2 className="text-xl font-semibold text-gray-900">Groq API Configuration</h2>
       </div>
 
@@ -117,7 +117,7 @@ const GroqApiKeySetup: React.FC<GroqApiKeySetupProps> = ({ onComplete }) => {
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             placeholder="gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
             required
           />
           <p className="mt-1 text-sm text-gray-500">
@@ -126,7 +126,7 @@ const GroqApiKeySetup: React.FC<GroqApiKeySetupProps> = ({ onComplete }) => {
               href="https://console.groq.com/keys" 
               target="_blank" 
               rel="noopener noreferrer"
-              className="text-yellow-600 hover:underline"
+              className="text-red-600 hover:underline"
             >
               console.groq.com/keys
             </a>
@@ -140,7 +140,7 @@ const GroqApiKeySetup: React.FC<GroqApiKeySetupProps> = ({ onComplete }) => {
           <select
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
           >
             {GROQ_MODELS.map(model => (
               <option key={model.id} value={model.id}>{model.name}</option>
@@ -155,7 +155,7 @@ const GroqApiKeySetup: React.FC<GroqApiKeySetupProps> = ({ onComplete }) => {
           <button
             onClick={handleSave}
             disabled={loading || !apiKey}
-            className="flex items-center gap-2 px-6 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 disabled:opacity-50"
+            className="flex items-center gap-2 px-6 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50"
           >
             {loading ? (
               <>
@@ -173,9 +173,9 @@ const GroqApiKeySetup: React.FC<GroqApiKeySetupProps> = ({ onComplete }) => {
       </div>
 
       <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-        <h3 className="text-sm font-medium text-blue-800 mb-2">Why do I need a Groq API key?</h3>
+        <h3 className="text-sm font-medium text-blue-800 mb-2">Why do I need an Airtel Groq API key?</h3>
         <p className="text-sm text-blue-600">
-          Groq provides the AI capabilities for our education and customer service features. 
+          Groq provides the AI capabilities for our Airtel education and customer service features. 
           By using your own API key, you maintain control over your usage and billing.
           Your key is stored securely and only used for your own requests.
         </p>
