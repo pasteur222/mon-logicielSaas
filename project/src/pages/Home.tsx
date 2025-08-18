@@ -86,10 +86,10 @@ const Home = () => {
             <div className="lg:w-1/2 lg:pr-12">
               <h1 className="text-4xl font-extrabold text-gray-900 sm:text-5xl sm:tracking-tight lg:text-6xl">
                 <span className="block">Révolutionnez votre</span>
-                <span className="block text-red-600">communication et apprentissage</span>
+                <span className="block text-red-600">communication professionnelle</span>
               </h1>
               <p className="mt-6 text-xl text-gray-500 max-w-3xl">
-                {settings.app_name} combine l'intelligence artificielle avancée avec la puissance de WhatsApp pour transformer votre expérience éducative et professionnelle.
+                {settings.app_name} combine l'intelligence artificielle avancée avec la puissance de WhatsApp pour transformer votre expérience professionnelle.
               </p>
               <div className="mt-10 flex flex-wrap gap-4">
                 <button
@@ -117,7 +117,7 @@ const Home = () => {
                 <div className="absolute inset-0 bg-gradient-to-r from-red-500 to-red-600 rounded-2xl transform rotate-3 scale-105 opacity-10"></div>
                 <img 
                   src="https://images.pexels.com/photos/3861969/pexels-photo-3861969.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2" 
-                  alt="MTN GPT Platform" 
+                  alt="Airtel GPT Platform" 
                   className="relative rounded-2xl shadow-xl"
                 />
               </div>
@@ -164,8 +164,8 @@ const Home = () => {
             {[
               {
                 icon: MessageCircle,
-                title: 'Airtel Chat',
-                description: 'Assistant virtuel intelligent pour la préparation aux examens',
+                title: 'Chatbot web',
+                description: 'Assistant virtuel intelligent a integrer sur votre site web',
                 path: '/features',
                 color: 'blue'
               },
@@ -329,7 +329,7 @@ const Home = () => {
               {
                 name: "Marie Diop",
                 role: "Étudiante en Terminale",
-                quote: `Grâce à ${settings.app_name}, j'ai pu améliorer mes notes en mathématiques et physique. L'assistant répond à toutes mes questions, même tard le soir!`,
+                quote: `Grâce à ${settings.app_name}, j'ai pu obtenir ma sastisfaction avec votre service client. L'assistant répond à toutes mes questions, même tard le soir!`,
                 avatar: "https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=150"
               },
               {
@@ -340,8 +340,8 @@ const Home = () => {
               },
               {
                 name: "Fatou Sow",
-                role: "Enseignante",
-                quote: `Je recommande ${settings.app_name} à tous mes élèves. C'est comme avoir un tuteur personnel disponible à tout moment pour les aider dans leurs révisions.`,
+                role: "Entrepreneur",
+                quote: `Je recommande ${settings.app_name} à tous les professionnels. Airtel GPT disponible à tout moment pour les aider dans leurs compagnes marketing WhatsApp.`,
                 avatar: "https://images.pexels.com/photos/1181686/pexels-photo-1181686.jpeg?auto=compress&cs=tinysrgb&w=150"
               }
             ].map((testimonial, index) => (
@@ -477,9 +477,9 @@ const Home = () => {
             <div>
               <h4 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">Produits</h4>
               <ul className="space-y-2">
-                <li><Link to="/airtel-chat" className="text-gray-400 hover:text-white">MTN Chat</Link></li>
+                <li><Link to="/airtel-chat" className="text-gray-400 hover:text-white">Airtel chatbot web</Link></li>
                 <li><Link to="/professional-subscription" className="text-gray-400 hover:text-white">Business Solutions</Link></li>
-                <li><Link to="/features" className="text-gray-400 hover:text-white">Fonctionnalités</Link></li>
+                <li><Link to="/features" className="text-gray-400 hover:text-white">Airtel chatabot quiz</Link></li>
               </ul>
             </div>
             <div>

@@ -44,9 +44,9 @@ export const BUSINESS_PLANS: BusinessPlan[] = [
     shortFeatures: [
       'Messages illimités par mois',
       'Toutes les fonctionnalités du plan Basique',
-      'Module Service Client avec IA',
-      'Base de connaissances personnalisable',
-      'Support prioritaire'
+      'Chatbot Service Client avec IA pour WhatsApp et web',
+      'Base de connaissances personnalisable pour le chatbot',
+      
     ],
     features: [
       'Messages illimités par mois',
@@ -58,7 +58,7 @@ export const BUSINESS_PLANS: BusinessPlan[] = [
       'Programmation d\'envois de messages pour plus tard.',
       'Création et réutilisation de modèles de messages.',
       'Envoi de médias enrichis: vidéos, PDF, images et fichiers audio.',
-      'Module Service Client: Assistant virtuel IA pour répondre automatiquement aux questions fréquentes de vos clients.',
+      'Chatbot Service Client: Assistant virtuel IA pour répondre automatiquement aux questions fréquentes de vos clients.',
       'Base de connaissances personnalisable pour votre entreprise.',
       'Analyse des intentions des clients et réponses contextuelles.',
       'Détection automatique des problèmes et escalade vers un agent humain si nécessaire.',
@@ -79,7 +79,7 @@ export const BUSINESS_PLANS: BusinessPlan[] = [
     shortFeatures: [
       'Messages illimités par mois',
       'Toutes les fonctionnalités du plan Pro',
-      'Module Quiz interactif',
+      'Chatbot Quiz interactif',
       'API dédiée et intégrations',
       'Assistance technique 24/7'
     ],
@@ -93,12 +93,12 @@ export const BUSINESS_PLANS: BusinessPlan[] = [
       'Programmation d\'envois de messages pour plus tard.',
       'Création et réutilisation de modèles de messages.',
       'Envoi de médias enrichis: vidéos, PDF, images et fichiers audio.',
-      'Module Service Client: Assistant virtuel IA pour répondre automatiquement aux questions fréquentes de vos clients.',
+      'Chatbot Service Client: Assistant virtuel IA pour répondre automatiquement aux questions fréquentes de vos clients.',
       'Base de connaissances personnalisable pour votre entreprise.',
       'Analyse des intentions des clients et réponses contextuelles.',
       'Détection automatique des problèmes et escalade vers un agent humain si nécessaire.',
       'Rapports détaillés sur les interactions clients et les taux de satisfaction.',
-      'Module Quiz: Création de quiz interactifs pour engager votre audience.',
+      'Chatbot Quiz: Création de quiz interactifs pour engager votre audience.',
       'Jeux-concours et sondages personnalisables avec classements automatiques.',
       'Collecte de données clients via des quiz ludiques et éducatifs.',
       'Analyse des résultats et segmentation basée sur les réponses.',

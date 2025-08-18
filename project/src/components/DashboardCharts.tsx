@@ -31,7 +31,7 @@ ChartJS.register(
 );
 
 interface DashboardChartsProps {
-  moduleType: 'whatsapp' | 'education' | 'customerService' | 'quiz';
+  moduleType: 'whatsapp' | '' | 'customerService' | 'quiz';
 }
 
 const DashboardCharts: React.FC<DashboardChartsProps> = ({ moduleType }) => {

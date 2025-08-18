@@ -19,7 +19,7 @@ const Features = () => {
     {
       title: 'Service Client IA',
       icon: Bot,
-      description: 'Assistant virtuel intelligent 24/7',
+      description: 'Assistant virtuell intelligent 24/7',
       details: [
         'Réponses automatiques intelligentes',
         'Analyse des intentions utilisateur',
@@ -28,18 +28,7 @@ const Features = () => {
       ],
       color: 'green'
     },
-    {
-      title: 'Education Interactive',
-      icon: BookOpen,
-      description: 'Plateforme d\'apprentissage personnalisée',
-      details: [
-        'Sessions d\'apprentissage adaptatives',
-        'Suivi des progrès en temps réel',
-        'Contenu personnalisé par niveau',
-        'Analyses détaillées des performances'
-      ],
-      color: 'red'
-    },
+    
     {
       title: 'Quiz Engageants',
       icon: GamepadIcon,

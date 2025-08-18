@@ -56,7 +56,7 @@ const Dashboard = () => {
     daysRemaining: 9999,
     messagesRemaining: null
   });
-  const [activeModule, setActiveModule] = useState<'whatsapp' | 'education' | 'customerService' | 'quiz'>('whatsapp');
+  const [activeModule, setActiveModule] = useState<'whatsapp' | '' | 'customerService' | 'quiz'>('whatsapp');
 
   useEffect(() => {
     fetchDashboardStats();

@@ -24,7 +24,7 @@ interface AppSettingsContextType {
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
-  app_name: 'MTN GPT',
+  app_name: 'Airtel GPT',
   contact_email: 'contact@mtngpt.com',
   contact_phone: '+221 XX XXX XX XX',
   contact_address: 'Brazzaville, République du Congo',
