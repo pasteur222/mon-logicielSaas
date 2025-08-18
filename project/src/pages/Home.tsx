@@ -378,7 +378,7 @@ const Home = () => {
                 Prêt à transformer votre expérience?
               </h2>
               <p className="mt-4 text-lg text-yellow-100">
-                Rejoignez des milliers d'utilisateurs qui ont déjà amélioré leur communication et leur apprentissage avec {settings.app_name}.
+                Rejoignez des milliers d'utilisateurs qui ont déjà amélioré leur communication professionnelle avec {settings.app_name}.
               </p>
             </div>
             <div className="mt-8 lg:mt-0 lg:w-2/5 lg:flex lg:justify-end">
@@ -468,7 +468,7 @@ const Home = () => {
               <span className="text-xl font-semibold">{settings.app_name}</span>
             </div>
             <p className="text-gray-400 max-w-2xl mx-auto">
-              Révolutionnez votre communication et votre apprentissage avec l'intelligence artificielle
+              Révolutionnez votre communication Professionelle avec l'intelligence artificielle
             </p>
           </div>
 
@@ -477,9 +477,9 @@ const Home = () => {
             <div>
               <h4 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">Produits</h4>
               <ul className="space-y-2">
-                <li><Link to="/airtel-chat" className="text-gray-400 hover:text-white">Airtel chatbot web</Link></li>
-                <li><Link to="/professional-subscription" className="text-gray-400 hover:text-white">Business Solutions</Link></li>
-                <li><Link to="/features" className="text-gray-400 hover:text-white">Airtel chatabot quiz</Link></li>
+                <li><span to="/airtel-chat" className="text-gray-400 hover:text-white">Airtel chatbot web</span></li>
+                <li><span to="/professional-subscription" className="text-gray-400 hover:text-white">Business Solutions</span></li>
+                <li><span to="/features" className="text-gray-400 hover:text-white">Airtel chatabot quiz</span></li>
               </ul>
             </div>
             <div>
