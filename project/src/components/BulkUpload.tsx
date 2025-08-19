@@ -129,21 +129,27 @@ const BulkUpload: React.FC<BulkUploadProps> = ({ onClose, onSend }) => {
         await onSend(parsedData);
       } else {
         // For CSV files with mappings
-        await onSend(parsedData.map(row => ({
-          ...row,
-          phoneNumber: row[mappings.phone],
-          name: mappings.name ? row[mappings.name] : undefined,
-          company: mappings.company ? row[mappings.company] : undefined,
-          message: message ? sanitizeWhatsAppMessage(message) : '',
-          variables: Object.entries(mappings)
+        await onSend(parsedData.map(row => {
+          // Create variables array safely
+          const variablesArray: Array<{ name: string; value: string }> = [];
+          
+          Object.entries(mappings)
             .filter(([key]) => key !== 'phone')
-            .reduce((acc, [key, columnName]) => {
+            .forEach(([key, columnName]) => {
               if (columnName && row[columnName]) {
-                acc[key] = row[columnName];
+                variablesArray.push({ name: key, value: row[columnName] });
               }
-              return acc;
-            }, {} as Record<string, string>)
-        })));
+            });
+
+          return {
+            ...row,
+            phoneNumber: row[mappings.phone],
+            name: mappings.name ? row[mappings.name] : undefined,
+            company: mappings.company ? row[mappings.company] : undefined,
+            message: message ? sanitizeWhatsAppMessage(message) : '',
+            variables: variablesArray
+          };
+        }));
       }
       
       onClose();

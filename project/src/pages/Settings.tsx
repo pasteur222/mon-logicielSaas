@@ -11,7 +11,6 @@ import PricingManager from '../components/PricingManager';
 import ExternalAnalytics from '../components/ExternalAnalytics';
 import AppSettingsManager from '../components/AppSettingsManager';
 import ContactManagement from '../components/ContactManagement';
-import ProfileImageUpload from '../components/ProfileImageUpload';
 import AppearanceSettings from '../components/AppearanceSettings';
 import WebhookConfigForm from '../components/WebhookConfigForm';
 
@@ -36,7 +35,6 @@ const Settings = () => {
   const [groqLoading, setGroqLoading] = useState(false);
   const [groqError, setGroqError] = useState<string | null>(null);
   const [groqSuccess, setGroqSuccess] = useState<string | null>(null);
-  const [profileImageChanged, setProfileImageChanged] = useState(false);
   const [logoutLoading, setLogoutLoading] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
   const [logoutSuccess, setLogoutSuccess] = useState<string | null>(null);
@@ -155,7 +153,6 @@ const Settings = () => {
       if (error) throw error;
       
       setSuccess('Profile updated successfully');
-      setProfileImageChanged(false);
       
       // Clear success message after 3 seconds
       setTimeout(() => {
@@ -167,10 +164,6 @@ const Settings = () => {
     } finally {
       setSaving(false);
     }
-  };
-
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setProfileImageChanged(true);
   };
 
   const handleSaveWebhookConfig = async () => {
@@ -533,18 +526,7 @@ const Settings = () => {
                   </div>
                 )}
                 
-                <div className="flex items-start gap-8 mb-8">
-                  <div>
-                    <ProfileImageUpload 
-                      userId={user?.id} 
-                      onImageChange={handleImageChange}
-                    />
-                    <p className="mt-2 text-sm text-gray-500 text-center">
-                      Cliquez pour modifier
-                    </p>
-                  </div>
-                  
-                  <div className="flex-1">
+                <div className="space-y-6">
                     <div className="grid grid-cols-2 gap-6">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -584,19 +566,6 @@ const Settings = () => {
                         L'adresse email ne peut pas être modifiée
                       </p>
                     </div>
-                    
-                    <div className="mt-4">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Téléphone
-                      </label>
-                      <input
-                        type="tel"
-                        value={profile?.phone_number || ''}
-                        onChange={(e) => setProfile({ ...profile, phone_number: e.target.value })}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
-                      />
-                    </div>
-                  </div>
                 </div>
                 
                 <div className="pt-4 border-t border-gray-200">

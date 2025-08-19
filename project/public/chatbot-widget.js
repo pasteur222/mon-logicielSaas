@@ -1,7 +1,7 @@
 /**
  * Airtel GPT Chatbot Widget
  * Embeddable customer service chatbot for external websites
- * Version: 2.0.0 - Enhanced with proper session management and security
+ * Version: 3.0.0 - WordPress Compatible with proper React handling
  */
 
 (function() {
@@ -32,19 +32,19 @@
     }
 
     getOrCreateWebUserId() {
-      let webUserId = localStorage.getItem('mtn-gpt-web-user-id');
+      let webUserId = localStorage.getItem('airtel-gpt-web-user-id');
       if (!webUserId) {
         webUserId = 'web_' + this.generateUUID();
-        localStorage.setItem('mtn-gpt-web-user-id', webUserId);
+        localStorage.setItem('airtel-gpt-web-user-id', webUserId);
       }
       return webUserId;
     }
 
     getOrCreateSessionId() {
-      let sessionId = sessionStorage.getItem('mtn-gpt-session-id');
+      let sessionId = sessionStorage.getItem('airtel-gpt-session-id');
       if (!sessionId) {
         sessionId = 'session_' + this.generateUUID();
-        sessionStorage.setItem('mtn-gpt-session-id', sessionId);
+        sessionStorage.setItem('airtel-gpt-session-id', sessionId);
       }
       return sessionId;
     }
@@ -59,7 +59,7 @@
 
     loadConversationHistory() {
       try {
-        const history = localStorage.getItem(`mtn-gpt-history-${this.webUserId}`);
+        const history = localStorage.getItem(`airtel-gpt-history-${this.webUserId}`);
         const parsed = history ? JSON.parse(history) : [];
         // Limit history to last 50 messages to prevent storage bloat
         return parsed.slice(-50);
@@ -73,7 +73,7 @@
       try {
         // Keep only last 50 messages
         const limitedHistory = this.conversationHistory.slice(-50);
-        localStorage.setItem(`mtn-gpt-history-${this.webUserId}`, JSON.stringify(limitedHistory));
+        localStorage.setItem(`airtel-gpt-history-${this.webUserId}`, JSON.stringify(limitedHistory));
       } catch (error) {
         console.error('Error saving conversation history:', error);
       }
@@ -98,7 +98,7 @@
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#x27;')
+        .replace(/'/g, '&#39;')
         .replace(/\//g, '&#x2F;');
     }
 
@@ -139,35 +139,93 @@
     }
   }
 
-  // Chatbot UI class
+  // Chatbot UI class - WordPress Compatible
   class ChatbotWidget {
     constructor() {
       this.session = new ChatbotSession();
       this.isOpen = false;
       this.isLoading = false;
       this.retryCount = 0;
+      this.widgetContainer = null;
+      this.shadowRoot = null;
+      this.isDestroyed = false;
       this.init();
     }
 
     init() {
-      this.createStyles();
-      this.createWidget();
-      this.attachEventListeners();
-      this.loadConversationHistory();
-      this.setupErrorHandling();
+      // Wait for DOM to be ready
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => this.initializeWidget());
+      } else {
+        this.initializeWidget();
+      }
+    }
+
+    initializeWidget() {
+      try {
+        this.createShadowDOM();
+        this.createStyles();
+        this.createWidget();
+        this.attachEventListeners();
+        this.loadConversationHistory();
+        this.setupErrorHandling();
+        this.setupCleanup();
+      } catch (error) {
+        console.error('Error initializing chatbot widget:', error);
+      }
+    }
+
+    createShadowDOM() {
+      // Create container element
+      this.widgetContainer = document.createElement('div');
+      this.widgetContainer.id = 'airtel-chatbot-widget-container';
+      this.widgetContainer.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        ${config.position}: 20px;
+        z-index: 2147483647;
+        pointer-events: none;
+      `;
+
+      // Create shadow DOM to prevent style conflicts
+      if (this.widgetContainer.attachShadow) {
+        this.shadowRoot = this.widgetContainer.attachShadow({ mode: 'closed' });
+      } else {
+        // Fallback for older browsers
+        this.shadowRoot = this.widgetContainer;
+      }
+
+      // Append to body safely
+      if (document.body) {
+        document.body.appendChild(this.widgetContainer);
+      } else {
+        // Wait for body to be available
+        const observer = new MutationObserver((mutations, obs) => {
+          if (document.body) {
+            document.body.appendChild(this.widgetContainer);
+            obs.disconnect();
+          }
+        });
+        observer.observe(document.documentElement, {
+          childList: true,
+          subtree: true
+        });
+      }
     }
 
     createStyles() {
       const styles = `
-        .mtn-chatbot-widget {
-          position: fixed;
-          bottom: 20px;
-          ${config.position}: 20px;
-          z-index: 10000;
+        <style>
+        * {
+          box-sizing: border-box;
+        }
+        
+        .airtel-chatbot-widget {
           font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          pointer-events: auto;
         }
 
-        .mtn-chatbot-button {
+        .airtel-chatbot-button {
           width: 60px;
           height: 60px;
           border-radius: 50%;
@@ -182,23 +240,23 @@
           position: relative;
         }
 
-        .mtn-chatbot-button:hover {
+        .airtel-chatbot-button:hover {
           transform: scale(1.1);
           box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
         }
 
-        .mtn-chatbot-button.offline {
+        .airtel-chatbot-button.offline {
           opacity: 0.6;
           cursor: not-allowed;
         }
 
-        .mtn-chatbot-button svg {
+        .airtel-chatbot-button svg {
           width: 24px;
           height: 24px;
           fill: white;
         }
 
-        .mtn-chatbot-notification {
+        .airtel-chatbot-notification {
           position: absolute;
           top: -8px;
           right: -8px;
@@ -212,16 +270,16 @@
           color: white;
           font-size: 12px;
           font-weight: bold;
-          animation: mtn-pulse 2s infinite;
+          animation: airtel-pulse 2s infinite;
         }
 
-        @keyframes mtn-pulse {
+        @keyframes airtel-pulse {
           0% { transform: scale(1); }
           50% { transform: scale(1.1); }
           100% { transform: scale(1); }
         }
 
-        .mtn-chatbot-window {
+        .airtel-chatbot-window {
           position: absolute;
           bottom: 80px;
           ${config.position}: 0;
@@ -236,12 +294,12 @@
           border: 1px solid #e5e7eb;
         }
 
-        .mtn-chatbot-window.open {
+        .airtel-chatbot-window.open {
           display: flex;
-          animation: mtn-slideUp 0.3s ease-out;
+          animation: airtel-slideUp 0.3s ease-out;
         }
 
-        @keyframes mtn-slideUp {
+        @keyframes airtel-slideUp {
           from {
             opacity: 0;
             transform: translateY(20px);
@@ -252,7 +310,7 @@
           }
         }
 
-        .mtn-chatbot-header {
+        .airtel-chatbot-header {
           background-color: ${config.color};
           color: white;
           padding: 16px;
@@ -261,18 +319,18 @@
           justify-content: space-between;
         }
 
-        .mtn-chatbot-header h3 {
+        .airtel-chatbot-header h3 {
           margin: 0;
           font-size: 16px;
           font-weight: 600;
         }
 
-        .mtn-chatbot-status {
+        .airtel-chatbot-status {
           font-size: 12px;
           opacity: 0.9;
         }
 
-        .mtn-chatbot-close {
+        .airtel-chatbot-close {
           background: none;
           border: none;
           color: white;
@@ -282,11 +340,11 @@
           transition: background-color 0.2s;
         }
 
-        .mtn-chatbot-close:hover {
+        .airtel-chatbot-close:hover {
           background-color: rgba(255, 255, 255, 0.1);
         }
 
-        .mtn-chatbot-messages {
+        .airtel-chatbot-messages {
           flex: 1;
           padding: 16px;
           overflow-y: auto;
@@ -296,17 +354,17 @@
           background: #f9fafb;
         }
 
-        .mtn-chatbot-message {
+        .airtel-chatbot-message {
           max-width: 80%;
           padding: 12px 16px;
           border-radius: 18px;
           font-size: 14px;
           line-height: 1.4;
           word-wrap: break-word;
-          animation: mtn-messageSlide 0.3s ease-out;
+          animation: airtel-messageSlide 0.3s ease-out;
         }
 
-        @keyframes mtn-messageSlide {
+        @keyframes airtel-messageSlide {
           from {
             opacity: 0;
             transform: translateY(10px);
@@ -317,14 +375,14 @@
           }
         }
 
-        .mtn-chatbot-message.user {
+        .airtel-chatbot-message.user {
           background-color: ${config.color};
           color: white;
           align-self: flex-end;
           border-bottom-right-radius: 4px;
         }
 
-        .mtn-chatbot-message.bot {
+        .airtel-chatbot-message.bot {
           background-color: white;
           color: #333;
           align-self: flex-start;
@@ -332,13 +390,13 @@
           border: 1px solid #e5e7eb;
         }
 
-        .mtn-chatbot-message.error {
+        .airtel-chatbot-message.error {
           background-color: #fef2f2;
           color: #dc2626;
           border: 1px solid #fecaca;
         }
 
-        .mtn-chatbot-message.system {
+        .airtel-chatbot-message.system {
           background-color: #f3f4f6;
           color: #6b7280;
           align-self: center;
@@ -346,7 +404,7 @@
           font-size: 12px;
         }
 
-        .mtn-chatbot-input-container {
+        .airtel-chatbot-input-container {
           padding: 16px;
           border-top: 1px solid #e5e7eb;
           background: white;
@@ -354,7 +412,7 @@
           gap: 8px;
         }
 
-        .mtn-chatbot-input {
+        .airtel-chatbot-input {
           flex: 1;
           padding: 12px 16px;
           border: 1px solid #e5e7eb;
@@ -364,17 +422,17 @@
           transition: border-color 0.2s;
         }
 
-        .mtn-chatbot-input:focus {
+        .airtel-chatbot-input:focus {
           border-color: ${config.color};
           box-shadow: 0 0 0 3px ${config.color}20;
         }
 
-        .mtn-chatbot-input:disabled {
+        .airtel-chatbot-input:disabled {
           background-color: #f9fafb;
           cursor: not-allowed;
         }
 
-        .mtn-chatbot-send {
+        .airtel-chatbot-send {
           width: 40px;
           height: 40px;
           border-radius: 50%;
@@ -387,24 +445,24 @@
           transition: all 0.2s;
         }
 
-        .mtn-chatbot-send:hover:not(:disabled) {
+        .airtel-chatbot-send:hover:not(:disabled) {
           transform: scale(1.05);
           box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
         }
 
-        .mtn-chatbot-send:disabled {
+        .airtel-chatbot-send:disabled {
           opacity: 0.5;
           cursor: not-allowed;
           transform: none;
         }
 
-        .mtn-chatbot-send svg {
+        .airtel-chatbot-send svg {
           width: 16px;
           height: 16px;
           fill: white;
         }
 
-        .mtn-chatbot-typing {
+        .airtel-chatbot-typing {
           display: flex;
           align-items: center;
           gap: 4px;
@@ -416,23 +474,23 @@
           border-bottom-left-radius: 4px;
         }
 
-        .mtn-chatbot-typing-dot {
+        .airtel-chatbot-typing-dot {
           width: 8px;
           height: 8px;
           border-radius: 50%;
           background-color: #9ca3af;
-          animation: mtn-typing 1.4s infinite ease-in-out;
+          animation: airtel-typing 1.4s infinite ease-in-out;
         }
 
-        .mtn-chatbot-typing-dot:nth-child(1) { animation-delay: -0.32s; }
-        .mtn-chatbot-typing-dot:nth-child(2) { animation-delay: -0.16s; }
+        .airtel-chatbot-typing-dot:nth-child(1) { animation-delay: -0.32s; }
+        .airtel-chatbot-typing-dot:nth-child(2) { animation-delay: -0.16s; }
 
-        @keyframes mtn-typing {
+        @keyframes airtel-typing {
           0%, 80%, 100% { transform: scale(0.8); opacity: 0.5; }
           40% { transform: scale(1); opacity: 1; }
         }
 
-        .mtn-chatbot-retry {
+        .airtel-chatbot-retry {
           background-color: #f59e0b;
           color: white;
           border: none;
@@ -443,90 +501,89 @@
           margin-top: 8px;
         }
 
-        .mtn-chatbot-retry:hover {
+        .airtel-chatbot-retry:hover {
           background-color: #d97706;
         }
 
         @media (max-width: 480px) {
-          .mtn-chatbot-window {
+          .airtel-chatbot-window {
             width: calc(100vw - 40px);
             height: calc(100vh - 100px);
             bottom: 80px;
             ${config.position}: 20px;
           }
           
-          .mtn-chatbot-button {
+          .airtel-chatbot-button {
             width: 50px;
             height: 50px;
           }
         }
 
         @media (prefers-reduced-motion: reduce) {
-          .mtn-chatbot-button,
-          .mtn-chatbot-window,
-          .mtn-chatbot-message {
+          .airtel-chatbot-button,
+          .airtel-chatbot-window,
+          .airtel-chatbot-message {
             animation: none;
             transition: none;
           }
         }
+        </style>
       `;
 
-      const styleSheet = document.createElement('style');
-      styleSheet.textContent = styles;
-      document.head.appendChild(styleSheet);
+      this.shadowRoot.innerHTML = styles;
     }
 
     createWidget() {
-      const widget = document.createElement('div');
-      widget.className = 'mtn-chatbot-widget';
-      widget.innerHTML = `
-        <button class="mtn-chatbot-button" id="mtn-chatbot-toggle" aria-label="Ouvrir le chat">
-          <svg viewBox="0 0 100 100" aria-hidden="true">
-            <circle cx="50" cy="50" r="45" fill="#E60012"/>
-            <path d="M25 35h50v30H25z" fill="white"/>
-            <text x="50" y="55" text-anchor="middle" fill="#E60012" font-size="16" font-weight="bold">airtel</text>
-          </svg>
-          <div class="mtn-chatbot-notification" id="mtn-chatbot-notification" style="display: none;">!</div>
-        </button>
-        
-        <div class="mtn-chatbot-window" id="mtn-chatbot-window" role="dialog" aria-labelledby="mtn-chatbot-title">
-          <div class="mtn-chatbot-header">
-            <div>
-              <h3 id="mtn-chatbot-title">${this.escapeHtml(config.title)}</h3>
-              <div class="mtn-chatbot-status" id="mtn-chatbot-status">En ligne</div>
-            </div>
-            <button class="mtn-chatbot-close" id="mtn-chatbot-close" aria-label="Fermer le chat">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-              </svg>
-            </button>
-          </div>
+      const widgetHTML = `
+        <div class="airtel-chatbot-widget">
+          <button class="airtel-chatbot-button" id="airtel-chatbot-toggle" aria-label="Ouvrir le chat">
+            <svg viewBox="0 0 100 100" aria-hidden="true">
+              <circle cx="50" cy="50" r="45" fill="#E60012"/>
+              <path d="M25 35h50v30H25z" fill="white"/>
+              <text x="50" y="55" text-anchor="middle" fill="#E60012" font-size="16" font-weight="bold">airtel</text>
+            </svg>
+            <div class="airtel-chatbot-notification" id="airtel-chatbot-notification" style="display: none;">!</div>
+          </button>
           
-          <div class="mtn-chatbot-messages" id="mtn-chatbot-messages" role="log" aria-live="polite">
-            <div class="mtn-chatbot-message bot">
-              Bonjour ! Comment puis-je vous aider aujourd'hui ?
+          <div class="airtel-chatbot-window" id="airtel-chatbot-window" role="dialog" aria-labelledby="airtel-chatbot-title">
+            <div class="airtel-chatbot-header">
+              <div>
+                <h3 id="airtel-chatbot-title">${this.escapeHtml(config.title)}</h3>
+                <div class="airtel-chatbot-status" id="airtel-chatbot-status">En ligne</div>
+              </div>
+              <button class="airtel-chatbot-close" id="airtel-chatbot-close" aria-label="Fermer le chat">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                </svg>
+              </button>
             </div>
-          </div>
-          
-          <div class="mtn-chatbot-input-container">
-            <input 
-              type="text" 
-              class="mtn-chatbot-input" 
-              id="mtn-chatbot-input" 
-              placeholder="Tapez votre message..."
-              maxlength="1000"
-              aria-label="Message"
-            />
-            <button class="mtn-chatbot-send" id="mtn-chatbot-send" aria-label="Envoyer le message">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-              </svg>
-            </button>
+            
+            <div class="airtel-chatbot-messages" id="airtel-chatbot-messages" role="log" aria-live="polite">
+              <div class="airtel-chatbot-message bot">
+                Bonjour ! Comment puis-je vous aider aujourd'hui ?
+              </div>
+            </div>
+            
+            <div class="airtel-chatbot-input-container">
+              <input 
+                type="text" 
+                class="airtel-chatbot-input" 
+                id="airtel-chatbot-input" 
+                placeholder="Tapez votre message..."
+                maxlength="1000"
+                aria-label="Message"
+              />
+              <button class="airtel-chatbot-send" id="airtel-chatbot-send" aria-label="Envoyer le message">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
       `;
 
-      document.body.appendChild(widget);
+      this.shadowRoot.innerHTML += widgetHTML;
     }
 
     escapeHtml(text) {
@@ -536,21 +593,45 @@
     }
 
     attachEventListeners() {
-      const toggleButton = document.getElementById('mtn-chatbot-toggle');
-      const closeButton = document.getElementById('mtn-chatbot-close');
-      const sendButton = document.getElementById('mtn-chatbot-send');
-      const input = document.getElementById('mtn-chatbot-input');
+      if (this.isDestroyed) return;
 
-      toggleButton?.addEventListener('click', () => this.toggleWidget());
-      closeButton?.addEventListener('click', () => this.closeWidget());
-      sendButton?.addEventListener('click', () => this.handleSendMessage());
-      
-      input?.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
+      const toggleButton = this.shadowRoot.querySelector('#airtel-chatbot-toggle');
+      const closeButton = this.shadowRoot.querySelector('#airtel-chatbot-close');
+      const sendButton = this.shadowRoot.querySelector('#airtel-chatbot-send');
+      const input = this.shadowRoot.querySelector('#airtel-chatbot-input');
+
+      if (toggleButton) {
+        toggleButton.addEventListener('click', (e) => {
           e.preventDefault();
+          e.stopPropagation();
+          this.toggleWidget();
+        });
+      }
+
+      if (closeButton) {
+        closeButton.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          this.closeWidget();
+        });
+      }
+
+      if (sendButton) {
+        sendButton.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
           this.handleSendMessage();
-        }
-      });
+        });
+      }
+      
+      if (input) {
+        input.addEventListener('keypress', (e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            this.handleSendMessage();
+          }
+        });
+      }
 
       // Auto-resize for mobile
       window.addEventListener('resize', () => this.handleResize());
@@ -564,6 +645,7 @@
     }
 
     setupErrorHandling() {
+      // Global error handler for the widget
       window.addEventListener('error', (event) => {
         if (event.filename && event.filename.includes('chatbot-widget')) {
           console.error('Chatbot widget error:', event.error);
@@ -573,14 +655,59 @@
 
       // Update online status
       this.updateConnectionStatus();
-      setInterval(() => this.updateConnectionStatus(), 30000); // Check every 30 seconds
+      this.statusInterval = setInterval(() => this.updateConnectionStatus(), 30000);
+    }
+
+    setupCleanup() {
+      // Setup proper cleanup for WordPress compatibility
+      const cleanup = () => {
+        this.destroy();
+      };
+
+      // Listen for page unload
+      window.addEventListener('beforeunload', cleanup);
+      
+      // Listen for WordPress page changes (if using AJAX navigation)
+      if (window.wp && window.wp.hooks) {
+        window.wp.hooks.addAction('wp_router_page_changed', 'airtel-chatbot', cleanup);
+      }
+
+      // Store cleanup function for manual cleanup
+      this.cleanup = cleanup;
+    }
+
+    destroy() {
+      if (this.isDestroyed) return;
+      
+      this.isDestroyed = true;
+      
+      // Clear intervals
+      if (this.statusInterval) {
+        clearInterval(this.statusInterval);
+      }
+
+      // Remove widget from DOM safely
+      try {
+        if (this.widgetContainer && this.widgetContainer.parentNode) {
+          this.widgetContainer.parentNode.removeChild(this.widgetContainer);
+        }
+      } catch (error) {
+        console.warn('Error removing chatbot widget:', error);
+      }
+
+      // Clear references
+      this.widgetContainer = null;
+      this.shadowRoot = null;
+      this.session = null;
     }
 
     updateConnectionStatus() {
-      const statusElement = document.getElementById('mtn-chatbot-status');
-      const toggleButton = document.getElementById('mtn-chatbot-toggle');
+      if (this.isDestroyed) return;
+
+      const statusElement = this.shadowRoot?.querySelector('#airtel-chatbot-status');
+      const toggleButton = this.shadowRoot?.querySelector('#airtel-chatbot-toggle');
       
-      if (this.session.isOnline) {
+      if (this.session?.isOnline) {
         if (statusElement) statusElement.textContent = 'En ligne';
         if (toggleButton) toggleButton.classList.remove('offline');
       } else {
@@ -591,6 +718,8 @@
     }
 
     toggleWidget() {
+      if (this.isDestroyed) return;
+      
       if (this.isOpen) {
         this.closeWidget();
       } else {
@@ -599,34 +728,44 @@
     }
 
     openWidget() {
-      const window = document.getElementById('mtn-chatbot-window');
-      window?.classList.add('open');
-      this.isOpen = true;
-      
-      // Hide notification
-      const notification = document.getElementById('mtn-chatbot-notification');
-      if (notification) notification.style.display = 'none';
-      
-      // Focus input
-      const input = document.getElementById('mtn-chatbot-input');
-      setTimeout(() => input?.focus(), 100);
-      
-      // Mark as read
-      this.markMessagesAsRead();
+      if (this.isDestroyed) return;
+
+      const window = this.shadowRoot?.querySelector('#airtel-chatbot-window');
+      if (window) {
+        window.classList.add('open');
+        this.isOpen = true;
+        
+        // Hide notification
+        const notification = this.shadowRoot?.querySelector('#airtel-chatbot-notification');
+        if (notification) notification.style.display = 'none';
+        
+        // Focus input
+        const input = this.shadowRoot?.querySelector('#airtel-chatbot-input');
+        setTimeout(() => input?.focus(), 100);
+        
+        // Mark as read
+        this.markMessagesAsRead();
+      }
     }
 
     closeWidget() {
-      const window = document.getElementById('mtn-chatbot-window');
-      window?.classList.remove('open');
-      this.isOpen = false;
+      if (this.isDestroyed) return;
+
+      const window = this.shadowRoot?.querySelector('#airtel-chatbot-window');
+      if (window) {
+        window.classList.remove('open');
+        this.isOpen = false;
+      }
     }
 
     loadConversationHistory() {
-      const messagesContainer = document.getElementById('mtn-chatbot-messages');
+      if (this.isDestroyed) return;
+
+      const messagesContainer = this.shadowRoot?.querySelector('#airtel-chatbot-messages');
       if (!messagesContainer) return;
 
       // Clear existing messages except welcome message
-      const welcomeMessage = messagesContainer.querySelector('.mtn-chatbot-message.bot');
+      const welcomeMessage = messagesContainer.querySelector('.airtel-chatbot-message.bot');
       messagesContainer.innerHTML = '';
       if (welcomeMessage) {
         messagesContainer.appendChild(welcomeMessage);
@@ -642,7 +781,9 @@
     }
 
     async handleSendMessage() {
-      const input = document.getElementById('mtn-chatbot-input');
+      if (this.isDestroyed) return;
+
+      const input = this.shadowRoot?.querySelector('#airtel-chatbot-input');
       const message = input?.value.trim();
       
       if (!message || this.isLoading) return;
@@ -654,7 +795,7 @@
       }
 
       // Clear input and disable send button
-      input.value = '';
+      if (input) input.value = '';
       this.setLoading(true);
 
       // Display user message
@@ -673,6 +814,8 @@
     }
 
     async sendMessage(message, isRetry = false) {
+      if (this.isDestroyed) return;
+
       if (!isRetry) {
         this.showTypingIndicator();
       }
@@ -770,11 +913,13 @@
     }
 
     displayMessage(message, sender, isError = false) {
-      const messagesContainer = document.getElementById('mtn-chatbot-messages');
+      if (this.isDestroyed) return;
+
+      const messagesContainer = this.shadowRoot?.querySelector('#airtel-chatbot-messages');
       if (!messagesContainer) return;
 
       const messageElement = document.createElement('div');
-      messageElement.className = `mtn-chatbot-message ${sender}`;
+      messageElement.className = `airtel-chatbot-message ${sender}`;
       
       if (isError) {
         messageElement.classList.add('error');
@@ -793,11 +938,13 @@
     }
 
     showSystemMessage(message) {
-      const messagesContainer = document.getElementById('mtn-chatbot-messages');
+      if (this.isDestroyed) return;
+
+      const messagesContainer = this.shadowRoot?.querySelector('#airtel-chatbot-messages');
       if (!messagesContainer) return;
 
       const messageElement = document.createElement('div');
-      messageElement.className = 'mtn-chatbot-message system';
+      messageElement.className = 'airtel-chatbot-message system';
       messageElement.textContent = message;
       messagesContainer.appendChild(messageElement);
       
@@ -805,14 +952,16 @@
     }
 
     showRetryMessage(originalMessage, errorMessage) {
-      const messagesContainer = document.getElementById('mtn-chatbot-messages');
+      if (this.isDestroyed) return;
+
+      const messagesContainer = this.shadowRoot?.querySelector('#airtel-chatbot-messages');
       if (!messagesContainer) return;
 
       const retryElement = document.createElement('div');
-      retryElement.className = 'mtn-chatbot-message error';
+      retryElement.className = 'airtel-chatbot-message error';
       retryElement.innerHTML = `
         ${this.escapeHtml(errorMessage)}
-        <button class="mtn-chatbot-retry" onclick="window.mtnChatbotRetry('${this.escapeHtml(originalMessage)}')">
+        <button class="airtel-chatbot-retry" onclick="window.airtelChatbotRetry('${this.escapeHtml(originalMessage)}')">
           Réessayer (${this.retryCount}/${config.maxRetries})
         </button>
       `;
@@ -822,16 +971,18 @@
     }
 
     showTypingIndicator() {
-      const messagesContainer = document.getElementById('mtn-chatbot-messages');
+      if (this.isDestroyed) return;
+
+      const messagesContainer = this.shadowRoot?.querySelector('#airtel-chatbot-messages');
       if (!messagesContainer) return;
 
       const typingElement = document.createElement('div');
-      typingElement.className = 'mtn-chatbot-typing';
-      typingElement.id = 'mtn-chatbot-typing';
+      typingElement.className = 'airtel-chatbot-typing';
+      typingElement.id = 'airtel-chatbot-typing';
       typingElement.innerHTML = `
-        <div class="mtn-chatbot-typing-dot"></div>
-        <div class="mtn-chatbot-typing-dot"></div>
-        <div class="mtn-chatbot-typing-dot"></div>
+        <div class="airtel-chatbot-typing-dot"></div>
+        <div class="airtel-chatbot-typing-dot"></div>
+        <div class="airtel-chatbot-typing-dot"></div>
       `;
 
       messagesContainer.appendChild(typingElement);
@@ -839,12 +990,18 @@
     }
 
     hideTypingIndicator() {
-      const typingElement = document.getElementById('mtn-chatbot-typing');
-      typingElement?.remove();
+      if (this.isDestroyed) return;
+
+      const typingElement = this.shadowRoot?.querySelector('#airtel-chatbot-typing');
+      if (typingElement && typingElement.parentNode) {
+        typingElement.parentNode.removeChild(typingElement);
+      }
     }
 
     showNotification() {
-      const notification = document.getElementById('mtn-chatbot-notification');
+      if (this.isDestroyed) return;
+
+      const notification = this.shadowRoot?.querySelector('#airtel-chatbot-notification');
       if (notification) {
         notification.style.display = 'flex';
       }
@@ -852,27 +1009,33 @@
 
     markMessagesAsRead() {
       // This could be extended to mark messages as read on the server
-      console.log('Messages marked as read for session:', this.session.sessionId);
+      console.log('Messages marked as read for session:', this.session?.sessionId);
     }
 
     setLoading(loading) {
+      if (this.isDestroyed) return;
+
       this.isLoading = loading;
-      const sendButton = document.getElementById('mtn-chatbot-send');
-      const input = document.getElementById('mtn-chatbot-input');
+      const sendButton = this.shadowRoot?.querySelector('#airtel-chatbot-send');
+      const input = this.shadowRoot?.querySelector('#airtel-chatbot-input');
       
       if (sendButton) sendButton.disabled = loading;
       if (input) input.disabled = loading;
     }
 
     scrollToBottom() {
-      const messagesContainer = document.getElementById('mtn-chatbot-messages');
+      if (this.isDestroyed) return;
+
+      const messagesContainer = this.shadowRoot?.querySelector('#airtel-chatbot-messages');
       if (messagesContainer) {
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
       }
     }
 
     handleResize() {
-      const window = document.getElementById('mtn-chatbot-window');
+      if (this.isDestroyed) return;
+
+      const window = this.shadowRoot?.querySelector('#airtel-chatbot-window');
       if (!window) return;
 
       if (window.innerWidth <= 480) {
@@ -886,33 +1049,40 @@
   }
 
   // Global retry function
-  window.mtnChatbotRetry = function(message) {
-    if (window.mtnChatbotInstance) {
-      window.mtnChatbotInstance.sendMessage(message, true);
+  window.airtelChatbotRetry = function(message) {
+    if (window.airtelChatbotInstance && !window.airtelChatbotInstance.isDestroyed) {
+      window.airtelChatbotInstance.sendMessage(message, true);
     }
   };
 
   // Initialize widget when DOM is ready
   function initializeChatbot() {
     try {
+      // Check if widget already exists to prevent duplicates
+      if (window.airtelChatbotInstance && !window.airtelChatbotInstance.isDestroyed) {
+        console.log('Airtel GPT Chatbot Widget already initialized');
+        return;
+      }
+
       const widget = new ChatbotWidget();
-      window.mtnChatbotInstance = widget;
+      window.airtelChatbotInstance = widget;
       
       // Expose global API for advanced users
       window.AirtelGPTChatbot = {
         open: () => widget.openWidget(),
         close: () => widget.closeWidget(),
+        destroy: () => widget.destroy(),
         sendMessage: (message) => {
-          const input = document.getElementById('mtn-chatbot-input');
+          const input = widget.shadowRoot?.querySelector('#airtel-chatbot-input');
           if (input) {
             input.value = message;
             widget.handleSendMessage();
           }
         },
         getSession: () => ({
-          webUserId: widget.session.webUserId,
-          sessionId: widget.session.sessionId,
-          isOnline: widget.session.isOnline
+          webUserId: widget.session?.webUserId,
+          sessionId: widget.session?.sessionId,
+          isOnline: widget.session?.isOnline
         })
       };
 
@@ -922,10 +1092,19 @@
     }
   }
 
+  // WordPress-compatible initialization
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initializeChatbot);
   } else {
-    initializeChatbot();
+    // Use setTimeout to ensure DOM is fully ready
+    setTimeout(initializeChatbot, 100);
   }
+
+  // Cleanup on page unload for WordPress compatibility
+  window.addEventListener('beforeunload', () => {
+    if (window.airtelChatbotInstance) {
+      window.airtelChatbotInstance.destroy();
+    }
+  });
 
 })();

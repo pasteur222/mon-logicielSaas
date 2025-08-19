@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Upload, Download, Users, MessageSquare, Settings, RefreshCw, AlertCircle, Plus, X, Calendar, FileText, Zap, CheckCircle, XCircle, Clock, Filter, Search, Trash2, Edit, Copy, Eye, EyeOff, Smartphone, Globe, BarChart2, Target, Repeat, Play, Pause, Save, Image, Video, File as FileIcon, ArrowRight, Edit2, Trash } from 'lucide-react';
+import { Send, Upload, Download, Users, MessageSquare, Settings, RefreshCw, AlertCircle, Plus, X, Calendar, FileText, Zap, CheckCircle, XCircle, Clock, Filter, Search, Trash2, Edit, Copy, Eye, EyeOff, Smartphone, Globe, BarChart2, Target, Repeat, Play, Pause, Save, Image, Video, File as FileIcon } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { sendWhatsAppMessages, checkMessageStatus, parseMessageVariables, replaceMessageVariables, sanitizeWhatsAppMessage, type MessageResult, type MessageVariable } from '../lib/whatsapp';
-import { getTemplates as getWhatsAppTemplates } from '../lib/whatsapp-template';
+import { sendWhatsAppMessages, getWhatsAppTemplates, checkMessageStatus, parseMessageVariables, replaceMessageVariables, sanitizeWhatsAppMessage, type MessageResult, type MessageVariable } from '../lib/whatsapp';
 import { sendWhatsAppTemplateMessage } from '../lib/whatsapp-template';
 import { useAuth } from '../contexts/AuthContext';
 import BackButton from '../components/BackButton';
@@ -43,6 +42,43 @@ interface Campaign {
   scheduledFor?: Date;
 }
 
+// Helper function to get file extension from MIME type or filename
+const getFileExtension = (mimeType: string, fileName: string): string => {
+  const mimeToExt: Record<string, string> = {
+    'image/jpeg': 'jpg',
+    'image/jpg': 'jpg',
+    'image/png': 'png',
+    'image/gif': 'gif',
+    'image/webp': 'webp',
+    'video/mp4': 'mp4',
+    'video/mov': 'mov',
+    'video/avi': 'avi',
+    'video/webm': 'webm',
+    'video/quicktime': 'mov',
+    'application/pdf': 'pdf',
+    'application/msword': 'doc',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx'
+  };
+
+  // First try to get extension from MIME type
+  if (mimeToExt[mimeType]) {
+    return mimeToExt[mimeType];
+  }
+
+  // Fallback to file extension from filename
+  const fileExt = fileName.split('.').pop()?.toLowerCase();
+  return fileExt || 'bin';
+};
+
+// Helper function to process file for upload
+const processFileForUpload = async (file: File): Promise<File> => {
+  return new Promise((resolve) => {
+    // For most files, we can use them as-is
+    // This function can be extended for file processing if needed
+    resolve(file);
+  });
+};
+
 const WhatsApp = () => {
   const { user } = useAuth();
   const [message, setMessage] = useState('');
@@ -70,24 +106,6 @@ const WhatsApp = () => {
   const [mediaUrls, setMediaUrls] = useState<string[]>([]);
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [showCampaignModal, setShowCampaignModal] = useState(false);
-  const [showViewCampaign, setShowViewCampaign] = useState(false);
-  const [showScheduleModal, setShowScheduleModal] = useState(false);
-  const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
-  const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
-  const [newCampaign, setNewCampaign] = useState({
-    name: '',
-    description: '',
-    message: '',
-    targetAudience: [] as string[],
-    scheduledFor: null as Date | null
-  });
-  const [scheduleData, setScheduleData] = useState({
-    date: '',
-    time: '',
-    message: '',
-    recipients: [] as string[]
-  });
 
   useEffect(() => {
     loadContacts();
@@ -290,22 +308,78 @@ const WhatsApp = () => {
       setIsLoading(true);
       setError(null);
 
-      const messageData = data.map(item => {
-        // Sanitize the message if it exists
-        const sanitizedMessage = item.message ? sanitizeWhatsAppMessage(item.message) : '';
-        
-        return {
-          phoneNumber: item.phoneNumber,
-          message: sanitizedMessage,
-          variables: item.variables
-        };
+      // Process the uploaded data
+      const phoneNumbers: string[] = [];
+      const newContacts: Contact[] = [];
+
+      data.forEach((item, index) => {
+        if (item.phoneNumber) {
+          phoneNumbers.push(item.phoneNumber);
+          
+          // Create contact object
+          const contact: Contact = {
+            id: item.phoneNumber,
+            phoneNumber: item.phoneNumber,
+            name: item.name || undefined,
+            company: item.company || undefined,
+            status: 'active'
+          };
+          
+          newContacts.push(contact);
+        }
       });
 
-      const results = await sendWhatsAppMessages(messageData, user?.id);
-      setResults(results);
+      // Add phone numbers to recipients
+      setRecipients(prev => {
+        const combined = [...prev, ...phoneNumbers];
+        // Remove duplicates
+        return Array.from(new Set(combined));
+      });
 
-      const successCount = results.filter(r => r.status === 'success').length;
-      setSuccess(`Successfully processed ${successCount} contacts`);
+      // Add contacts to contacts list
+      setContacts(prev => {
+        const contactMap = new Map<string, Contact>();
+        
+        // Add existing contacts
+        prev.forEach(contact => {
+          contactMap.set(contact.phoneNumber, contact);
+        });
+        
+        // Add new contacts (will overwrite if duplicate)
+        newContacts.forEach(contact => {
+          contactMap.set(contact.phoneNumber, contact);
+        });
+        
+        return Array.from(contactMap.values());
+      });
+
+      // If there are messages to send
+      if (data.some(item => item.message && item.message.trim())) {
+        const messageData = data
+          .filter(item => item.message && item.message.trim())
+          .map(item => {
+            // Sanitize the message if it exists
+            const sanitizedMessage = item.message ? sanitizeWhatsAppMessage(item.message) : '';
+            
+            return {
+              phoneNumber: item.phoneNumber,
+              message: sanitizedMessage,
+              variables: item.variables || []
+            };
+          });
+
+        if (messageData.length > 0) {
+          const results = await sendWhatsAppMessages(messageData, user?.id);
+          setResults(results);
+
+          const successCount = results.filter(r => r.status === 'success').length;
+          setSuccess(`Successfully processed ${successCount} contacts and imported ${phoneNumbers.length} phone numbers`);
+        } else {
+          setSuccess(`Successfully imported ${phoneNumbers.length} phone numbers`);
+        }
+      } else {
+        setSuccess(`Successfully imported ${phoneNumbers.length} phone numbers`);
+      }
     } catch (error) {
       console.error('Error in bulk upload:', error);
       setError('Failed to process bulk upload');
@@ -520,157 +594,6 @@ const WhatsApp = () => {
   const removeMedia = (index: number) => {
     setMediaFiles(prev => prev.filter((_, i) => i !== index));
     setMediaUrls(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const handleCreateCampaign = () => {
-    setEditingCampaign(null);
-    setNewCampaign({
-      name: '',
-      description: '',
-      message: '',
-      targetAudience: [],
-      scheduledFor: null
-    });
-    setShowCampaignModal(true);
-  };
-
-  const handleEditCampaign = (campaign: Campaign) => {
-    setEditingCampaign(campaign);
-    setNewCampaign({
-      name: campaign.name,
-      description: '',
-      message: '',
-      targetAudience: [],
-      scheduledFor: campaign.scheduledFor || null
-    });
-    setShowCampaignModal(true);
-  };
-
-  const handleViewCampaign = (campaign: Campaign) => {
-    setSelectedCampaign(campaign);
-    setShowViewCampaign(true);
-  };
-
-  const handleSaveCampaign = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      if (!newCampaign.name || !newCampaign.message) {
-        setError('Campaign name and message are required');
-        return;
-      }
-
-      const campaignData = {
-        name: newCampaign.name,
-        description: newCampaign.description,
-        target_audience: newCampaign.targetAudience,
-        start_date: newCampaign.scheduledFor?.toISOString() || new Date().toISOString(),
-        end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days from now
-        status: newCampaign.scheduledFor ? 'scheduled' : 'draft',
-        message_template: newCampaign.message,
-        metrics: { sent: 0, delivered: 0, opened: 0, clicked: 0 }
-      };
-
-      if (editingCampaign) {
-        // Update existing campaign
-        const { error: updateError } = await supabase
-          .from('campaigns')
-          .update(campaignData)
-          .eq('id', editingCampaign.id);
-
-        if (updateError) throw updateError;
-        setSuccess('Campaign updated successfully');
-      } else {
-        // Create new campaign
-        const { error: insertError } = await supabase
-          .from('campaigns')
-          .insert([campaignData]);
-
-        if (insertError) throw insertError;
-        setSuccess('Campaign created successfully');
-      }
-
-      setShowCampaignModal(false);
-      loadCampaigns(); // Refresh campaigns list
-    } catch (error) {
-      console.error('Error saving campaign:', error);
-      setError('Failed to save campaign');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleDeleteCampaign = async (campaignId: string) => {
-    if (!confirm('Are you sure you want to delete this campaign?')) return;
-
-    try {
-      const { error } = await supabase
-        .from('campaigns')
-        .delete()
-        .eq('id', campaignId);
-
-      if (error) throw error;
-      
-      setSuccess('Campaign deleted successfully');
-      loadCampaigns(); // Refresh campaigns list
-      setShowViewCampaign(false);
-    } catch (error) {
-      console.error('Error deleting campaign:', error);
-      setError('Failed to delete campaign');
-    }
-  };
-
-  const handleScheduleMessage = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      if (!scheduleData.date || !scheduleData.time || !scheduleData.message) {
-        setError('Please fill in all required fields');
-        return;
-      }
-
-      if (scheduleData.recipients.length === 0) {
-        setError('Please add at least one recipient');
-        return;
-      }
-
-      // Combine date and time
-      const scheduledDateTime = new Date(`${scheduleData.date}T${scheduleData.time}`);
-      
-      if (scheduledDateTime <= new Date()) {
-        setError('Scheduled time must be in the future');
-        return;
-      }
-
-      // Save scheduled message
-      const { error } = await supabase
-        .from('scheduled_messages')
-        .insert([{
-          message: scheduleData.message,
-          recipients: scheduleData.recipients,
-          send_at: scheduledDateTime.toISOString(),
-          repeat_type: 'none',
-          status: 'scheduled'
-        }]);
-
-      if (error) throw error;
-
-      setSuccess('Message scheduled successfully');
-      setShowScheduleModal(false);
-      setScheduleData({
-        date: '',
-        time: '',
-        message: '',
-        recipients: []
-      });
-    } catch (error) {
-      console.error('Error scheduling message:', error);
-      setError('Failed to schedule message');
-    } finally {
-      setIsLoading(false);
-    }
   };
 
   const filteredContacts = contacts.filter(contact => {
@@ -946,6 +869,30 @@ const WhatsApp = () => {
                         <p className="text-sm text-gray-500">
                           Enter phone numbers in international format (+country code + number)
                         </p>
+                        
+                        {/* Display imported contacts */}
+                        {contacts.length > 0 && (
+                          <div className="mt-4">
+                            <h4 className="text-sm font-medium text-gray-700 mb-2">
+                              Imported Contacts ({contacts.length})
+                            </h4>
+                            <div className="max-h-32 overflow-y-auto border border-gray-200 rounded-lg">
+                              {contacts.slice(0, 10).map((contact) => (
+                                <div key={contact.id} className="px-3 py-2 text-sm border-b border-gray-100 last:border-b-0">
+                                  <span className="font-medium">{contact.phoneNumber}</span>
+                                  {contact.name && (
+                                    <span className="text-gray-500 ml-2">({contact.name})</span>
+                                  )}
+                                </div>
+                              ))}
+                              {contacts.length > 10 && (
+                                <div className="px-3 py-2 text-sm text-gray-500 text-center">
+                                  ... and {contacts.length - 10} more contacts
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -1120,10 +1067,7 @@ const WhatsApp = () => {
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
                   <h2 className="text-lg font-semibold text-gray-900">Campaign Management</h2>
-                  <button 
-                    onClick={handleCreateCampaign}
-                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                  >
+                  <button className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
                     <Plus className="w-4 h-4" />
                     New Campaign
                   </button>
@@ -1159,20 +1103,7 @@ const WhatsApp = () => {
                         </div>
                         {campaign.scheduledFor && (
                           <div className="flex justify-between text-sm">
-                            <button
-                              onClick={() => {
-                                setScheduleData({
-                                  date: campaign.scheduledFor!.toISOString().split('T')[0],
-                                  time: campaign.scheduledFor!.toTimeString().slice(0, 5),
-                                  message: '',
-                                  recipients: []
-                                });
-                                setShowScheduleModal(true);
-                              }}
-                              className="text-blue-600 hover:text-blue-800 underline text-sm"
-                            >
-                              Scheduled:
-                            </button>
+                            <span className="text-gray-600">Scheduled:</span>
                             <span className="font-medium">
                               {campaign.scheduledFor.toLocaleDateString()}
                             </span>
@@ -1181,18 +1112,12 @@ const WhatsApp = () => {
                       </div>
 
                       <div className="mt-4 flex gap-2">
-                        <button 
-                          onClick={() => handleViewCampaign(campaign)}
-                          className="flex-1 px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-                        >
+                        <button className="flex-1 px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
                           <Eye className="w-4 h-4 inline mr-1" />
                           View
                         </button>
-                        <button 
-                          onClick={() => handleEditCampaign(campaign)}
-                          className="flex-1 px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
-                        >
-                          <Edit2 className="w-4 h-4 inline mr-1" />
+                        <button className="flex-1 px-3 py-1.5 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200">
+                          <Edit className="w-4 h-4 inline mr-1" />
                           Edit
                         </button>
                       </div>
@@ -1207,10 +1132,7 @@ const WhatsApp = () => {
                     <p className="text-gray-500 mb-6">
                       Create your first campaign to start reaching your audience
                     </p>
-                    <button 
-                      onClick={handleCreateCampaign}
-                      className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                    >
+                    <button className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
                       Create Campaign
                     </button>
                   </div>
@@ -1232,351 +1154,6 @@ const WhatsApp = () => {
         <MessageScheduler
           onClose={() => setShowScheduler(false)}
         />
-      )}
-
-      {/* New Campaign Modal */}
-      {showCampaignModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-lg max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-200">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-gray-900">
-                  {editingCampaign ? 'Edit Campaign' : 'New Campaign'}
-                </h2>
-                <button
-                  onClick={() => setShowCampaignModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
-            </div>
-
-            <div className="p-6 space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Campaign Name *
-                </label>
-                <input
-                  type="text"
-                  value={newCampaign.name}
-                  onChange={(e) => setNewCampaign(prev => ({ ...prev, name: e.target.value }))}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  placeholder="Enter campaign name"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Description
-                </label>
-                <textarea
-                  value={newCampaign.description}
-                  onChange={(e) => setNewCampaign(prev => ({ ...prev, description: e.target.value }))}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  rows={3}
-                  placeholder="Campaign description (optional)"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Message Template *
-                </label>
-                <RichTextEditor
-                  value={newCampaign.message}
-                  onChange={(content) => setNewCampaign(prev => ({ ...prev, message: content }))}
-                  placeholder="Type your campaign message here..."
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Target Audience
-                </label>
-                <textarea
-                  value={newCampaign.targetAudience.join('\n')}
-                  onChange={(e) => setNewCampaign(prev => ({ 
-                    ...prev, 
-                    targetAudience: e.target.value.split('\n').filter(phone => phone.trim()) 
-                  }))}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  rows={4}
-                  placeholder="Enter phone numbers (one per line)&#10;+1234567890&#10;+0987654321"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Schedule (Optional)
-                </label>
-                <input
-                  type="datetime-local"
-                  value={newCampaign.scheduledFor ? 
-                    new Date(newCampaign.scheduledFor.getTime() - newCampaign.scheduledFor.getTimezoneOffset() * 60000)
-                      .toISOString().slice(0, 16) : ''}
-                  onChange={(e) => setNewCampaign(prev => ({ 
-                    ...prev, 
-                    scheduledFor: e.target.value ? new Date(e.target.value) : null 
-                  }))}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                />
-              </div>
-            </div>
-
-            <div className="p-6 border-t border-gray-200 flex justify-end gap-4">
-              <button
-                onClick={() => setShowCampaignModal(false)}
-                className="px-4 py-2 text-gray-600 hover:text-gray-900"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveCampaign}
-                disabled={isLoading || !newCampaign.name || !newCampaign.message}
-                className="flex items-center gap-2 px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
-              >
-                {isLoading ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-4 h-4" />
-                    {editingCampaign ? 'Update Campaign' : 'Create Campaign'}
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* View Campaign Modal */}
-      {showViewCampaign && selectedCampaign && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-lg max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-200">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-gray-900">
-                  Campaign Details: {selectedCampaign.name}
-                </h2>
-                <button
-                  onClick={() => setShowViewCampaign(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
-            </div>
-
-            <div className="p-6 space-y-6">
-              {/* Campaign Statistics */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-blue-50 p-4 rounded-lg">
-                  <div className="text-2xl font-bold text-blue-600">{selectedCampaign.recipients}</div>
-                  <div className="text-sm text-gray-600">Recipients</div>
-                </div>
-                <div className="bg-green-50 p-4 rounded-lg">
-                  <div className="text-2xl font-bold text-green-600">{selectedCampaign.sent}</div>
-                  <div className="text-sm text-gray-600">Sent</div>
-                </div>
-                <div className="bg-yellow-50 p-4 rounded-lg">
-                  <div className="text-2xl font-bold text-yellow-600">{selectedCampaign.delivered}</div>
-                  <div className="text-sm text-gray-600">Delivered</div>
-                </div>
-                <div className="bg-purple-50 p-4 rounded-lg">
-                  <div className="text-2xl font-bold text-purple-600">{selectedCampaign.opened}</div>
-                  <div className="text-sm text-gray-600">Opened</div>
-                </div>
-              </div>
-
-              {/* Performance Metrics */}
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <h3 className="text-lg font-medium text-gray-900 mb-3">Performance Metrics</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <div className="text-sm text-gray-600">Delivery Rate</div>
-                    <div className="text-lg font-semibold text-gray-900">
-                      {selectedCampaign.sent > 0 ? 
-                        ((selectedCampaign.delivered / selectedCampaign.sent) * 100).toFixed(1) : 0}%
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-sm text-gray-600">Open Rate</div>
-                    <div className="text-lg font-semibold text-gray-900">
-                      {selectedCampaign.delivered > 0 ? 
-                        ((selectedCampaign.opened / selectedCampaign.delivered) * 100).toFixed(1) : 0}%
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-sm text-gray-600">Click Rate</div>
-                    <div className="text-lg font-semibold text-gray-900">
-                      {selectedCampaign.opened > 0 ? 
-                        ((selectedCampaign.clicked / selectedCampaign.opened) * 100).toFixed(1) : 0}%
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Schedule Information */}
-              {selectedCampaign.scheduledFor && (
-                <div className="bg-blue-50 p-4 rounded-lg">
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">Schedule Information</h3>
-                  <div className="flex items-center gap-2">
-                    <Calendar className="w-5 h-5 text-blue-600" />
-                    <span className="text-gray-700">
-                      Scheduled for: {selectedCampaign.scheduledFor.toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="p-6 border-t border-gray-200 flex justify-between">
-              <button
-                onClick={() => handleDeleteCampaign(selectedCampaign.id)}
-                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-              >
-                <Trash className="w-4 h-4" />
-                Delete Campaign
-              </button>
-              <div className="flex gap-4">
-                <button
-                  onClick={() => {
-                    setShowViewCampaign(false);
-                    handleEditCampaign(selectedCampaign);
-                  }}
-                  className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                >
-                  <Edit2 className="w-4 h-4" />
-                  Edit Campaign
-                </button>
-                <button
-                  onClick={() => setShowViewCampaign(false)}
-                  className="px-4 py-2 text-gray-600 hover:text-gray-900"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Schedule Message Modal */}
-      {showScheduleModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-lg max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-200">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-gray-900">Schedule Message</h2>
-                <button
-                  onClick={() => setShowScheduleModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
-            </div>
-
-            <div className="p-6 space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Date *
-                  </label>
-                  <input
-                    type="date"
-                    value={scheduleData.date}
-                    onChange={(e) => setScheduleData(prev => ({ ...prev, date: e.target.value }))}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                    min={new Date().toISOString().split('T')[0]}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Time *
-                  </label>
-                  <input
-                    type="time"
-                    value={scheduleData.time}
-                    onChange={(e) => setScheduleData(prev => ({ ...prev, time: e.target.value }))}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Message *
-                </label>
-                <RichTextEditor
-                  value={scheduleData.message}
-                  onChange={(content) => setScheduleData(prev => ({ ...prev, message: content }))}
-                  placeholder="Type your scheduled message here..."
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Recipients *
-                </label>
-                <textarea
-                  value={scheduleData.recipients.join('\n')}
-                  onChange={(e) => setScheduleData(prev => ({ 
-                    ...prev, 
-                    recipients: e.target.value.split('\n').filter(r => r.trim()) 
-                  }))}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  rows={4}
-                  placeholder="Enter phone numbers (one per line)&#10;+1234567890&#10;+0987654321"
-                />
-                <p className="mt-1 text-sm text-gray-500">
-                  Enter phone numbers in international format
-                </p>
-              </div>
-
-              {scheduleData.date && scheduleData.time && (
-                <div className="bg-blue-50 p-4 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <Calendar className="w-5 h-5 text-blue-600" />
-                    <span className="text-blue-800 font-medium">
-                      Scheduled for: {new Date(`${scheduleData.date}T${scheduleData.time}`).toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="p-6 border-t border-gray-200 flex justify-end gap-4">
-              <button
-                onClick={() => setShowScheduleModal(false)}
-                className="px-4 py-2 text-gray-600 hover:text-gray-900"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleScheduleMessage}
-                disabled={isLoading || !scheduleData.date || !scheduleData.time || !scheduleData.message || scheduleData.recipients.length === 0}
-                className="flex items-center gap-2 px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
-              >
-                {isLoading ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    Scheduling...
-                  </>
-                ) : (
-                  <>
-                    <Calendar className="w-4 h-4" />
-                    Schedule Message
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
       )}
 
       {showTemplates && (
