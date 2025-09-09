@@ -180,6 +180,12 @@ export async function getCustomerServiceHistory(
   limit: number = 50
 ): Promise<CustomerServiceMessage[]> {
   try {
+    console.log('🔍 [CUSTOMER-SERVICE] Getting conversation history:', {
+      phoneNumber,
+      webUserId,
+      limit
+    });
+    
     let query = supabase
       .from('customer_conversations')
       .select('*')
@@ -196,9 +202,11 @@ export async function getCustomerServiceHistory(
     const { data, error } = await query;
 
     if (error) {
+      console.error('❌ [CUSTOMER-SERVICE] Database error getting history:', error);
       throw new Error(`Failed to get conversation history: ${error.message}`);
     }
 
+    console.log(`✅ [CUSTOMER-SERVICE] Retrieved ${data?.length || 0} conversation records`);
     return (data || []).map(conv => ({
       phoneNumber: conv.phone_number,
       webUserId: conv.web_user_id,
@@ -212,6 +220,154 @@ export async function getCustomerServiceHistory(
   } catch (error) {
     console.error('Error getting customer service history:', error);
     return [];
+  }
+}
+
+/**
+ * Delete customer service conversations by IDs
+ */
+export async function deleteCustomerServiceConversations(conversationIds: string[]): Promise<{
+  success: boolean;
+  deletedCount: number;
+  error?: string;
+}> {
+  try {
+    console.log('🗑️ [CUSTOMER-SERVICE] Deleting conversations:', conversationIds);
+    
+    if (!conversationIds || conversationIds.length === 0) {
+      throw new Error('No conversation IDs provided for deletion');
+    }
+
+    // First, verify the conversations exist and are customer service conversations
+    const { data: existingConversations, error: fetchError } = await supabase
+      .from('customer_conversations')
+      .select('id, phone_number, sender, intent')
+      .in('id', conversationIds)
+      .eq('intent', 'client');
+
+    if (fetchError) {
+      console.error('❌ [CUSTOMER-SERVICE] Error fetching conversations for deletion:', fetchError);
+      throw new Error(`Failed to fetch conversations: ${fetchError.message}`);
+    }
+
+    console.log(`📋 [CUSTOMER-SERVICE] Found ${existingConversations?.length || 0} conversations to delete`);
+
+    if (!existingConversations || existingConversations.length === 0) {
+      return {
+        success: true,
+        deletedCount: 0,
+        error: 'No conversations found to delete'
+      };
+    }
+
+    // Perform the deletion
+    const { data: deletedData, error: deleteError } = await supabase
+      .from('customer_conversations')
+      .delete()
+      .in('id', conversationIds)
+      .eq('intent', 'client')
+      .select('id');
+
+    if (deleteError) {
+      console.error('❌ [CUSTOMER-SERVICE] Error deleting conversations:', deleteError);
+      throw new Error(`Failed to delete conversations: ${deleteError.message}`);
+    }
+
+    const deletedCount = deletedData?.length || 0;
+    console.log(`✅ [CUSTOMER-SERVICE] Successfully deleted ${deletedCount} conversations`);
+
+    return {
+      success: true,
+      deletedCount,
+    };
+
+  } catch (error) {
+    console.error('❌ [CUSTOMER-SERVICE] Critical error in deleteCustomerServiceConversations:', error);
+    return {
+      success: false,
+      deletedCount: 0,
+      error: error instanceof Error ? error.message : 'Unknown error occurred'
+    };
+  }
+}
+
+/**
+ * Delete customer service conversations by timeframe
+ */
+export async function deleteCustomerServiceConversationsByTimeframe(
+  timeframe: '1h' | '24h' | '7d' | 'all'
+): Promise<{
+  success: boolean;
+  deletedCount: number;
+  error?: string;
+}> {
+  try {
+    console.log('🗑️ [CUSTOMER-SERVICE] Deleting conversations by timeframe:', timeframe);
+    
+    let cutoffDate: Date;
+    const now = new Date();
+    
+    switch (timeframe) {
+      case '1h':
+        cutoffDate = new Date(now.getTime() - 60 * 60 * 1000);
+        break;
+      case '24h':
+        cutoffDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        break;
+      case '7d':
+        cutoffDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case 'all':
+        cutoffDate = new Date(0); // Delete all conversations
+        break;
+      default:
+        cutoffDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    }
+
+    console.log(`📅 [CUSTOMER-SERVICE] Cutoff date for ${timeframe}:`, cutoffDate.toISOString());
+
+    // First, get the conversations that will be deleted for verification
+    const { data: conversationsToDelete, error: fetchError } = await supabase
+      .from('customer_conversations')
+      .select('id, phone_number, created_at')
+      .eq('intent', 'client')
+      .gte('created_at', cutoffDate.toISOString());
+    
+    if (fetchError) {
+      console.error('❌ [CUSTOMER-SERVICE] Error fetching conversations for timeframe deletion:', fetchError);
+      throw new Error(`Failed to fetch conversations: ${fetchError.message}`);
+    }
+    
+    console.log(`📋 [CUSTOMER-SERVICE] Found ${conversationsToDelete?.length || 0} conversations to delete for timeframe ${timeframe}`);
+
+    // Perform the deletion
+    const { data: deletedConversations, error } = await supabase
+      .from('customer_conversations')
+      .delete()
+      .eq('intent', 'client')
+      .gte('created_at', cutoffDate.toISOString())
+      .select('id');
+
+    if (error) {
+      console.error('❌ [CUSTOMER-SERVICE] Error deleting conversations by timeframe:', error);
+      throw new Error(`Failed to delete conversations: ${error.message}`);
+    }
+
+    const deletedCount = deletedConversations?.length || 0;
+    console.log(`✅ [CUSTOMER-SERVICE] Successfully deleted ${deletedCount} conversations for timeframe ${timeframe}`);
+
+    return {
+      success: true,
+      deletedCount,
+    };
+
+  } catch (error) {
+    console.error('❌ [CUSTOMER-SERVICE] Critical error in deleteCustomerServiceConversationsByTimeframe:', error);
+    return {
+      success: false,
+      deletedCount: 0,
+      error: error instanceof Error ? error.message : 'Unknown error occurred'
+    };
   }
 }
 

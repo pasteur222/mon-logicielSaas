@@ -328,19 +328,28 @@ const WhatsApp = () => {
       case 'templates':
         return (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-6">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">Templates WhatsApp</h3>
                 <p className="text-sm text-gray-500">Gérez vos templates de messages approuvés</p>
               </div>
-              <button
-                onClick={loadTemplates}
-                disabled={loadingTemplates}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-              >
-                <RefreshCw className={`w-4 h-4 ${loadingTemplates ? 'animate-spin' : ''}`} />
-                Actualiser
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setShowTemplateManager(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                >
+                  <Plus className="w-4 h-4" />
+                  Créer Template
+                </button>
+                <button
+                  onClick={loadTemplates}
+                  disabled={loadingTemplates}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-4 h-4 ${loadingTemplates ? 'animate-spin' : ''}`} />
+                  Actualiser
+                </button>
+              </div>
             </div>
 
             {templateError && (
@@ -350,23 +359,46 @@ const WhatsApp = () => {
               </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {templates.map((template) => (
-                <div key={template.id} className="bg-white border border-gray-200 rounded-lg p-4 hover:border-red-300 hover:shadow-sm transition-colors">
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="font-medium text-gray-900">{template.template_name}</h4>
-                    <span className={`px-2 py-1 text-xs rounded-full ${
-                      template.status === 'APPROVED' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-                    }`}>
-                      {template.status}
-                    </span>
-                  </div>
-                  <p className="text-sm text-gray-600 mb-3">{template.category}</p>
-                  <div className="text-xs text-gray-500">
-                    {template.parameters?.components?.find((c: any) => c.type === 'body')?.text?.substring(0, 100) || 'Pas de contenu'}...
-                  </div>
+            {/* Show message templates from message_templates table */}
+            <div className="space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <MessageSquare className="w-5 h-5 text-blue-600" />
+                  <h4 className="font-medium text-blue-800">Templates de Messages Personnalisés</h4>
                 </div>
-              ))}
+                <p className="text-blue-700 text-sm">
+                  Gérez vos templates de messages personnalisés. Ces templates sont stockés localement et peuvent être utilisés pour vos envois WhatsApp.
+                </p>
+              </div>
+              
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <MessageSquare className="w-5 h-5 text-yellow-600" />
+                  <h4 className="font-medium text-yellow-800">Templates WhatsApp Officiels</h4>
+                </div>
+                <p className="text-yellow-700 text-sm mb-3">
+                  Les templates ci-dessous sont vos templates WhatsApp officiels approuvés par Meta. Utilisez le bouton "Template WhatsApp" dans l'onglet "Envoi de Messages" pour les utiliser.
+                </p>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {templates.map((template) => (
+                    <div key={template.id} className="bg-white border border-yellow-300 rounded-lg p-4 hover:border-yellow-400 transition-all">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="font-medium text-gray-900 text-sm">{template.template_name}</h4>
+                        <span className={`px-2 py-1 text-xs rounded-full ${
+                          template.status === 'APPROVED' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {template.status}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-600 mb-2">{template.category}</p>
+                      <div className="text-xs text-gray-500">
+                        {template.parameters?.components?.find((c: any) => c.type === 'body')?.text?.substring(0, 80) || 'Pas de contenu'}...
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
 
             {templates.length === 0 && !loadingTemplates && (
@@ -380,7 +412,24 @@ const WhatsApp = () => {
         );
 
       case 'campaigns':
-        return <CampaignManager />;
+        return (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Gestion des Campagnes</h3>
+                <p className="text-sm text-gray-500">Créez et gérez vos campagnes marketing WhatsApp</p>
+              </div>
+              <button
+                onClick={() => setShowCampaignManager(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+              >
+                <Plus className="w-4 h-4" />
+                Nouvelle Campagne
+              </button>
+            </div>
+            <CampaignManager />
+          </div>
+        );
 
       case 'analytics':
         return (

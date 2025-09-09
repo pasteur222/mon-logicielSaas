@@ -50,6 +50,7 @@ const MessageTemplateManager: React.FC<MessageTemplateManagerProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
   const [newTemplate, setNewTemplate] = useState({
     name: '',
     category: '',
@@ -105,28 +106,53 @@ const MessageTemplateManager: React.FC<MessageTemplateManagerProps> = ({
         .map(match => match[1])
         .filter((value, index, self) => self.indexOf(value) === index);
 
-      const { data, error } = await supabase
-        .from('message_templates')
-        .insert([{
-          name: newTemplate.name,
-          category: newTemplate.category,
-          content: newTemplate.content,
-          variables,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }])
-        .select()
-        .single();
+      if (editingTemplate) {
+        // Update existing template
+        const { error } = await supabase
+          .from('message_templates')
+          .update({
+            name: newTemplate.name,
+            category: newTemplate.category,
+            content: newTemplate.content,
+            variables,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', editingTemplate.id);
 
-      if (error) throw error;
+        if (error) throw error;
+        
+        // Update local state
+        setTemplates(prev => prev.map(t => 
+          t.id === editingTemplate.id 
+            ? { ...t, name: newTemplate.name, category: newTemplate.category, content: newTemplate.content, variables }
+            : t
+        ));
+      } else {
+        // Create new template
+        const { data, error } = await supabase
+          .from('message_templates')
+          .insert([{
+            name: newTemplate.name,
+            category: newTemplate.category,
+            content: newTemplate.content,
+            variables,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }])
+          .select()
+          .single();
 
-      setTemplates(prev => [data, ...prev]);
+        if (error) throw error;
+        setTemplates(prev => [data, ...prev]);
+      }
+      
       setNewTemplate({ name: '', category: '', content: '' });
+      setEditingTemplate(null);
       setIsCreating(false);
       setError(null);
     } catch (error) {
       console.error('Error creating template:', error);
-      setError('Failed to create template');
+      setError(editingTemplate ? 'Failed to update template' : 'Failed to create template');
     }
   };
 
@@ -156,10 +182,14 @@ const MessageTemplateManager: React.FC<MessageTemplateManagerProps> = ({
       <div className="fixed inset-0 bg-white z-50">
         <div className="flex flex-col h-screen">
           <div className="flex items-center justify-between p-6 bg-white border-b">
-            <h2 className="text-xl font-semibold text-gray-900">Create New Template</h2>
+            <h2 className="text-xl font-semibold text-gray-900">
+              {editingTemplate ? 'Modifier le Template' : 'Créer un Nouveau Template'}
+            </h2>
             <button
               onClick={() => {
                 setIsCreating(false);
+                setEditingTemplate(null);
+                setNewTemplate({ name: '', category: '', content: '' });
                 setError(null);
               }}
               className="text-gray-400 hover:text-gray-600"
@@ -238,6 +268,8 @@ const MessageTemplateManager: React.FC<MessageTemplateManagerProps> = ({
                 <button
                   onClick={() => {
                     setIsCreating(false);
+                    setEditingTemplate(null);
+                    setNewTemplate({ name: '', category: '', content: '' });
                     setError(null);
                   }}
                   className="px-4 py-2 text-gray-600 hover:text-gray-900"
@@ -250,7 +282,7 @@ const MessageTemplateManager: React.FC<MessageTemplateManagerProps> = ({
                   className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Save className="w-4 h-4" />
-                  Save Template
+                  {editingTemplate ? 'Modifier le Template' : 'Créer le Template'}
                 </button>
               </div>
             </div>
@@ -319,6 +351,21 @@ const MessageTemplateManager: React.FC<MessageTemplateManagerProps> = ({
                       title="Use Template"
                     >
                       <FileCheck className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditingTemplate(template);
+                        setNewTemplate({
+                          name: template.name,
+                          category: template.category,
+                          content: template.content
+                        });
+                        setIsCreating(true);
+                      }}
+                      className="p-2 text-green-600 hover:bg-green-50 rounded-lg"
+                      title="Edit Template"
+                    >
+                      <Edit2 className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => handleDelete(template.id)}

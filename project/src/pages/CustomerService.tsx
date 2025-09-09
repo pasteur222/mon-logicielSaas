@@ -8,7 +8,12 @@ import GroqApiCheck from '../components/GroqApiCheck';
 import ChatbotWebIntegration from '../components/ChatbotWebIntegration';
 import ChatbotHealthMonitor from '../components/ChatbotHealthMonitor';
 import { subscribeToModuleUpdates, ensureConversationSync } from '../lib/chatbot-communication';
-import { processCustomerServiceMessage, getCustomerServiceHistory } from '../lib/customer-service-chatbot';
+import { 
+  processCustomerServiceMessage, 
+  getCustomerServiceHistory,
+  deleteCustomerServiceConversations,
+  deleteCustomerServiceConversationsByTimeframe
+} from '../lib/customer-service-chatbot';
 
 interface Conversation {
   id: string;
@@ -67,6 +72,8 @@ const CustomerService = () => {
   const [showWebChatbot, setShowWebChatbot] = useState(false);
   const [selectedConversations, setSelectedConversations] = useState<string[]>([]);
   const [deletingConversations, setDeletingConversations] = useState(false);
+  const [showDeleteOptions, setShowDeleteOptions] = useState(false);
+  const [deleteTimeframe, setDeleteTimeframe] = useState<'1h' | '24h' | '7d' | 'all'>('24h');
 
   useEffect(() => {
     loadData();
@@ -128,7 +135,12 @@ const CustomerService = () => {
         .order('created_at', { ascending: false })
         .limit(100);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error loading conversations:', error);
+        throw error;
+      }
+      
+      console.log(`Loaded ${data?.length || 0} conversations`);
       setConversations(data || []);
     } catch (error) {
       console.error('Error loading conversations:', error);
@@ -286,27 +298,72 @@ const CustomerService = () => {
       setDeletingConversations(true);
       setError(null);
 
-      const { error } = await supabase
-        .from('customer_conversations')
-        .delete()
-        .in('id', selectedConversations);
-
-      if (error) throw error;
+      // Use the dedicated deletion function
+      const result = await deleteCustomerServiceConversations(selectedConversations);
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Deletion failed');
+      }
 
       // Update local state immediately to reflect deletion
       setConversations(prev => prev.filter(conv => !selectedConversations.includes(conv.id)));
       
-      setSuccess(`${selectedConversations.length} conversation(s) supprimée(s) avec succès`);
+      setSuccess(`${result.deletedCount} conversation(s) supprimée(s) avec succès`);
       setSelectedConversations([]);
       
-      // Reload data in background to ensure consistency
-      loadConversations();
-      loadStats();
+      // Reload stats to reflect the changes
+      await loadStats();
       
       setTimeout(() => setSuccess(null), 3000);
     } catch (error) {
       console.error('Error deleting conversations:', error);
-      setError('Erreur lors de la suppression des conversations');
+      setError(`Erreur lors de la suppression des conversations: ${error.message}`);
+    } finally {
+      setDeletingConversations(false);
+    }
+  };
+
+  const handleDeleteRecentConversations = async () => {
+    try {
+      setDeletingConversations(true);
+      setError(null);
+
+      const timeframeLabel = {
+        '1h': 'dernière heure',
+        '24h': 'dernières 24 heures',
+        '7d': 'derniers 7 jours',
+        'all': 'toutes les conversations'
+      }[deleteTimeframe];
+
+      if (!confirm(`Êtes-vous sûr de vouloir supprimer toutes les conversations de la ${timeframeLabel} ? Cette action est irréversible.`)) {
+        return;
+      }
+
+      // Use the dedicated deletion function
+      const result = await deleteCustomerServiceConversationsByTimeframe(deleteTimeframe);
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Deletion failed');
+      }
+      
+      // Update local state immediately to reflect deletion
+      if (deleteTimeframe === 'all') {
+        setConversations([]);
+      } else {
+        // Reload conversations to get the updated list
+        await loadConversations();
+      }
+      
+      setSuccess(`${result.deletedCount} conversation(s) supprimée(s) avec succès`);
+      setShowDeleteOptions(false);
+      
+      // Reload stats to reflect the changes
+      await loadStats();
+      
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (error) {
+      console.error('Error deleting recent conversations:', error);
+      setError(`Erreur lors de la suppression des conversations récentes: ${error.message}`);
     } finally {
       setDeletingConversations(false);
     }
@@ -422,6 +479,13 @@ const CustomerService = () => {
                 >
                   <MessageCircle className="w-4 h-4" />
                   Chatbot Web
+                </button>
+                <button
+                  onClick={() => setShowDeleteOptions(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Supprimer Conversations
                 </button>
                 <button
                   onClick={() => setShowRuleEditor(true)}
@@ -629,6 +693,28 @@ const CustomerService = () => {
               <div className="px-6 py-4 border-b border-gray-200">
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-semibold text-gray-900">Conversations Récentes</h3>
+                  <div className="flex items-center gap-2">
+                    {selectedConversations.length > 0 && (
+                      <button
+                        onClick={handleDeleteSelectedConversations}
+                        disabled={deletingConversations}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 text-sm"
+                      >
+                        {deletingConversations ? (
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-4 h-4" />
+                        )}
+                        Supprimer ({selectedConversations.length})
+                      </button>
+                    )}
+                    <button
+                      onClick={selectAllConversations}
+                      className="text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      {selectedConversations.length === conversations.length ? 'Désélectionner tout' : 'Sélectionner tout'}
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -648,6 +734,13 @@ const CustomerService = () => {
                       }`}
                     >
                       <div className="flex items-start justify-between">
+                        <div className="flex items-start gap-3">
+                          <input
+                            type="checkbox"
+                            checked={selectedConversations.includes(conversation.id)}
+                            onChange={() => toggleConversationSelection(conversation.id)}
+                            className="mt-1 h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded"
+                          />
                         <div className="flex items-start gap-3 flex-1">
                           <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1">
@@ -683,6 +776,7 @@ const CustomerService = () => {
                             {new Date(conversation.created_at).toLocaleString()}
                           </p>
                           </div>
+                        </div>
                         </div>
                         {conversation.sender === 'user' && (
                           <button
@@ -799,6 +893,78 @@ const CustomerService = () => {
           </div>
         )}
       </GroqApiCheck>
+
+      {/* Delete Conversations Modal */}
+      {showDeleteOptions && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-lg max-w-md w-full mx-4">
+            <div className="flex items-center justify-between p-6 border-b">
+              <h3 className="text-xl font-semibold text-gray-900">Supprimer les Conversations</h3>
+              <button
+                onClick={() => setShowDeleteOptions(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertCircle className="w-5 h-5 text-red-600" />
+                  <h4 className="font-medium text-red-800">Attention</h4>
+                </div>
+                <p className="text-red-700 text-sm">
+                  Cette action supprimera définitivement les conversations sélectionnées. Cette action ne peut pas être annulée.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Période à supprimer
+                </label>
+                <select
+                  value={deleteTimeframe}
+                  onChange={(e) => setDeleteTimeframe(e.target.value as any)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                >
+                  <option value="1h">Dernière heure</option>
+                  <option value="24h">Dernières 24 heures</option>
+                  <option value="7d">Derniers 7 jours</option>
+                  <option value="all">Toutes les conversations</option>
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-4 pt-4 border-t">
+                <button
+                  onClick={() => setShowDeleteOptions(false)}
+                  className="px-4 py-2 text-gray-600 hover:text-gray-900"
+                  disabled={deletingConversations}
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={handleDeleteRecentConversations}
+                  disabled={deletingConversations}
+                  className="flex items-center gap-2 px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                >
+                  {deletingConversations ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Suppression...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4" />
+                      Supprimer
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Web Chatbot Integration Modal */}
       {showWebChatbot && (
