@@ -212,10 +212,13 @@ export async function recalculateQuizAnalytics(): Promise<void> {
  */
 export async function triggerModuleUpdate(module: string, payload: any): Promise<void> {
   try {
-    // Use Supabase real-time to broadcast updates
-    const channel = supabase.channel(`module_updates_${module}`);
+    console.log(`📡 [CHATBOT-COMMUNICATION] Triggering module update for ${module}:`, payload);
     
-    await channel.send({
+    // Use Supabase real-time to broadcast updates with better error handling
+    const channelName = `module_updates_${module}`;
+    const channel = supabase.channel(channelName);
+    
+    const result = await channel.send({
       type: 'broadcast',
       event: 'module_update',
       payload: {
@@ -224,10 +227,24 @@ export async function triggerModuleUpdate(module: string, payload: any): Promise
         ...payload
       }
     });
+    
+    if (result === 'ok') {
+      console.log(`✅ [CHATBOT-COMMUNICATION] Module update sent successfully for ${module}`);
+    } else {
+      console.warn(`⚠️ [CHATBOT-COMMUNICATION] Module update send result for ${module}:`, result);
+    }
 
-    console.log(`Module update triggered for ${module}:`, payload);
+    // Ensure channel is properly cleaned up
+    setTimeout(() => {
+      try {
+        channel.unsubscribe();
+      } catch (error) {
+        console.warn('Error cleaning up broadcast channel:', error);
+      }
+    }, 1000);
+    
   } catch (error) {
-    console.error(`Error triggering module update for ${module}:`, error);
+    console.error(`❌ [CHATBOT-COMMUNICATION] Error triggering module update for ${module}:`, error);
     // Don't throw - this is not critical for the main operation
   }
 }
@@ -239,17 +256,37 @@ export function subscribeToModuleUpdates(
   module: string, 
   callback: (payload: any) => void
 ): () => void {
-  const channel = supabase.channel(`module_updates_${module}`);
+  console.log(`🔗 [CHATBOT-COMMUNICATION] Subscribing to module updates: ${module}`);
+  
+  const channelName = `module_updates_${module}`;
+  const channel = supabase.channel(channelName, {
+    config: {
+      presence: {
+        key: `${module}_subscriber`
+      }
+    }
+  });
   
   channel
     .on('broadcast', { event: 'module_update' }, (payload) => {
-      console.log(`Received update for ${module}:`, payload);
+      console.log(`📨 [CHATBOT-COMMUNICATION] Received update for ${module}:`, payload);
       callback(payload.payload);
     })
-    .subscribe();
+    .on('presence', { event: 'sync' }, () => {
+      console.log(`👥 [CHATBOT-COMMUNICATION] Presence sync for ${module}`);
+    })
+    .subscribe((status) => {
+      console.log(`📡 [CHATBOT-COMMUNICATION] Channel ${channelName} status:`, status);
+      if (status === 'SUBSCRIBED') {
+        console.log(`✅ [CHATBOT-COMMUNICATION] Successfully subscribed to ${module} updates`);
+      } else if (status === 'CHANNEL_ERROR') {
+        console.error(`❌ [CHATBOT-COMMUNICATION] Channel error for ${module}:`, status);
+      }
+    });
 
   // Return unsubscribe function
   return () => {
+    console.log(`🔌 [CHATBOT-COMMUNICATION] Unsubscribing from ${module} updates`);
     channel.unsubscribe();
   };
 }
@@ -418,11 +455,43 @@ export async function performChatbotHealthCheck(): Promise<{
   }
 
   try {
-    // Test real-time connection
-    const testChannel = supabase.channel('health_check');
-    await testChannel.subscribe();
-    realtimeHealthy = testChannel.state === 'joined';
-    await testChannel.unsubscribe();
+    // Test real-time connection with proper async handling
+    const testChannel = supabase.channel('health_check_test', {
+      config: {
+        presence: {
+          key: 'health_test'
+        }
+      }
+    });
+    
+    // Create a promise that resolves when subscription is complete
+    const subscriptionPromise = new Promise<boolean>((resolve) => {
+      const timeout = setTimeout(() => {
+        resolve(false);
+      }, 5000); // 5 second timeout
+      
+      testChannel.subscribe((status) => {
+        clearTimeout(timeout);
+        if (status === 'SUBSCRIBED') {
+          resolve(true);
+        } else {
+          resolve(false);
+        }
+      });
+    });
+    
+    realtimeHealthy = await subscriptionPromise;
+    
+    // Clean up the test channel
+    try {
+      await testChannel.unsubscribe();
+    } catch (cleanupError) {
+      console.warn('Error cleaning up health check channel:', cleanupError);
+    }
+    
+    if (!realtimeHealthy) {
+      errors.push('Real-time connection test failed or timed out');
+    }
   } catch (error) {
     errors.push(`Real-time test failed: ${error.message}`);
   }

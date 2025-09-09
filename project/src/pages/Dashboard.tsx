@@ -282,7 +282,11 @@ const Dashboard = () => {
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <RealTimeSync onSyncUpdate={(module, data) => {
-            console.log(`Dashboard sync update from ${module}:`, data);
+            console.log(`📊 [DASHBOARD] Sync update from ${module}:`, data);
+            // Trigger a refresh of dashboard stats when updates are received
+            if (data.action === 'message_added' || data.action === 'analytics_updated') {
+              fetchDashboardStats();
+            }
           }} />
         </div>
       </div>

@@ -42,28 +42,47 @@ const ChatbotHealthMonitor: React.FC = () => {
     performHealthCheck();
     
     // Set up real-time monitoring
-    const unsubscribeConversations = subscribeToModuleUpdates('conversations', (payload) => {
-      console.log('Conversations module update:', payload);
-      // Refresh health check when conversations are updated
-      if (payload.action === 'message_added') {
-        performHealthCheck();
-      }
-    });
+    let mounted = true;
+    
+    const setupRealTimeMonitoring = () => {
+      const unsubscribeConversations = subscribeToModuleUpdates('conversations', (payload) => {
+        if (!mounted) return;
+        
+        console.log('📨 [HEALTH-MONITOR] Conversations module update:', payload);
+        // Refresh health check when conversations are updated
+        if (payload.action === 'message_added') {
+          performHealthCheck();
+        }
+      });
 
-    const unsubscribeQuiz = subscribeToModuleUpdates('quiz', (payload) => {
-      console.log('Quiz module update:', payload);
-      // Refresh health check when quiz is updated
-      if (payload.action === 'answer_submitted' || payload.action === 'quiz_completed') {
-        performHealthCheck();
-      }
-    });
+      const unsubscribeQuiz = subscribeToModuleUpdates('quiz', (payload) => {
+        if (!mounted) return;
+        
+        console.log('🎯 [HEALTH-MONITOR] Quiz module update:', payload);
+        // Refresh health check when quiz is updated
+        if (payload.action === 'answer_submitted' || payload.action === 'quiz_completed') {
+          performHealthCheck();
+        }
+      });
+      
+      return () => {
+        unsubscribeConversations();
+        unsubscribeQuiz();
+      };
+    };
+    
+    const cleanup = setupRealTimeMonitoring();
 
     // Periodic health checks every 30 seconds
-    const interval = setInterval(performHealthCheck, 30000);
+    const interval = setInterval(() => {
+      if (mounted) {
+        performHealthCheck();
+      }
+    }, 30000);
 
     return () => {
-      unsubscribeConversations();
-      unsubscribeQuiz();
+      mounted = false;
+      cleanup();
       clearInterval(interval);
     };
   }, []);
