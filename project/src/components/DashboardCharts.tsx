@@ -216,44 +216,30 @@ const DashboardCharts: React.FC<DashboardChartsProps> = ({ moduleType }) => {
       ]
     });
 
-    // Process data for intent distribution
-    const intents = messages
-      ?.filter(msg => msg.intent)
-      .reduce((acc: Record<string, number>, msg) => {
-        const intent = msg.intent || 'Unknown';
-        acc[intent] = (acc[intent] || 0) + 1;
-        return acc;
-      }, {});
+    // Process data for message distribution
+    const messageTypes = ['user', 'bot'];
+    const messageTypeData = messageTypes.map(type => 
+      messages?.filter(msg => msg.sender === type).length || 0
+    );
 
-    if (intents && Object.keys(intents).length > 0) {
-      const intentLabels = Object.keys(intents);
-      const intentCounts = Object.values(intents);
-
-      // Set doughnut chart data
-      setDistributionData({
-        labels: intentLabels,
-        datasets: [
-          {
-            data: intentCounts,
-            backgroundColor: [
-              'rgba(59, 130, 246, 0.7)',
-              'rgba(239, 68, 68, 0.7)',
-              'rgba(34, 197, 94, 0.7)',
-              'rgba(168, 85, 247, 0.7)',
-              'rgba(234, 179, 8, 0.7)'
-            ],
-            borderColor: [
-              'rgb(59, 130, 246)',
-              'rgb(239, 68, 68)',
-              'rgb(34, 197, 94)',
-              'rgb(168, 85, 247)',
-              'rgb(234, 179, 8)'
-            ],
-            borderWidth: 1,
-          }
-        ]
-      });
-    }
+    // Set doughnut chart data
+    setDistributionData({
+      labels: ['Utilisateurs', 'Bot'],
+      datasets: [
+        {
+          data: messageTypeData,
+          backgroundColor: [
+            'rgba(59, 130, 246, 0.7)',
+            'rgba(234, 179, 8, 0.7)'
+          ],
+          borderColor: [
+            'rgb(59, 130, 246)',
+            'rgb(234, 179, 8)'
+          ],
+          borderWidth: 1,
+        }
+      ]
+    });
 
     // Process data for response time
     const responseTimes = messages
@@ -452,7 +438,7 @@ const DashboardCharts: React.FC<DashboardChartsProps> = ({ moduleType }) => {
           <h3 className="text-lg font-medium text-gray-900 mb-4">
             {moduleType === 'whatsapp' && 'Distribution des messages'}
             {moduleType === '' && 'Distribution des matières'}
-            {moduleType === 'customerService' && 'Distribution des intentions'}
+            {moduleType === 'customerService' && 'Distribution of Messages'}
             {moduleType === 'quiz' && 'Segmentation des Utilisateurs'}
           </h3>
           <div className="h-64 flex items-center justify-center">
@@ -477,7 +463,7 @@ const DashboardCharts: React.FC<DashboardChartsProps> = ({ moduleType }) => {
       <div className="bg-white p-4 rounded-lg shadow-sm">
         <h3 className="text-lg font-medium text-gray-900 mb-4">
           {moduleType === 'whatsapp' && 'Statut des messages'}
-          {moduleType === '' && 'Performance des étudiants'}
+          {moduleType === '' && 'Performance des clients'}
           {moduleType === 'customerService' && 'Temps de réponse'}
           {moduleType === 'quiz' && 'Métriques d\'Engagement Marketing'}
         </h3>

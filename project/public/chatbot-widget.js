@@ -661,7 +661,9 @@
     setupCleanup() {
       // Setup proper cleanup for WordPress compatibility
       const cleanup = () => {
-        this.destroy();
+        if (!this.isDestroyed) {
+          this.destroy();
+        }
       };
 
       // Listen for page unload
@@ -684,15 +686,16 @@
       // Clear intervals
       if (this.statusInterval) {
         clearInterval(this.statusInterval);
+        this.statusInterval = null;
       }
 
       // Remove widget from DOM safely
       try {
-        if (this.widgetContainer && this.widgetContainer.parentNode) {
+        if (this.widgetContainer && this.widgetContainer.parentNode && document.body.contains(this.widgetContainer)) {
           this.widgetContainer.parentNode.removeChild(this.widgetContainer);
         }
       } catch (error) {
-        console.warn('Error removing chatbot widget:', error);
+        console.warn('Chatbot widget already removed or not in DOM:', error);
       }
 
       // Clear references
@@ -1102,9 +1105,19 @@
 
   // Cleanup on page unload for WordPress compatibility
   window.addEventListener('beforeunload', () => {
-    if (window.airtelChatbotInstance) {
+    if (window.airtelChatbotInstance && !window.airtelChatbotInstance.isDestroyed) {
       window.airtelChatbotInstance.destroy();
     }
   });
 
+  // Additional cleanup for WordPress AJAX navigation
+  if (typeof jQuery !== 'undefined') {
+    jQuery(document).on('ajaxComplete', function() {
+      // Check if we're on a new page and cleanup if needed
+      if (window.airtelChatbotInstance && !document.body.contains(window.airtelChatbotInstance.widgetContainer)) {
+        window.airtelChatbotInstance.destroy();
+        window.airtelChatbotInstance = null;
+      }
+    });
+  }
 })();

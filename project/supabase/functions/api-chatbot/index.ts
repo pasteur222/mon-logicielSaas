@@ -8,6 +8,15 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 }
 
+interface ChatbotResponse {
+  success: boolean
+  response: string
+  chatbotType: string
+  source: string
+  processingLogs: ProcessingLog[]
+  messageId?: string
+}
+
 interface ProcessingLog {
   step: string
   timestamp: string
@@ -132,6 +141,7 @@ serve(async (req: Request) => {
     // Route to appropriate chatbot handler
     let response: string
     let whatsappSent = false
+    let messageId: string | null = null
 
     switch (chatbotType) {
       case 'education':
@@ -140,11 +150,15 @@ serve(async (req: Request) => {
         break
       case 'client':
         addLog('CLIENT_START', { userIdentifier, source })
-        response = await handleClientMessage(userIdentifier, source, text, sessionId, userAgent, processingLogs, addLog)
+        const clientResult = await handleClientMessage(userIdentifier, source, text, sessionId, userAgent, processingLogs, addLog)
+        response = clientResult.response
+        messageId = clientResult.messageId
         break
       case 'quiz':
         addLog('QUIZ_START', { userIdentifier, source })
-        response = await handleQuizMessage(userIdentifier, source, text, sessionId, userAgent, processingLogs, addLog)
+        const quizResult = await handleQuizMessage(userIdentifier, source, text, sessionId, userAgent, processingLogs, addLog)
+        response = quizResult.response
+        messageId = quizResult.messageId
         break
       default:
         addLog('DEFAULT_EDUCATION', { chatbotType })
@@ -155,18 +169,22 @@ serve(async (req: Request) => {
       responseLength: response.length,
       whatsappSent,
       chatbotType,
-      source 
+      source,
+      messageId
     })
 
-    return new Response(
-      JSON.stringify({ 
+    const responseData: ChatbotResponse = {
         success: true, 
         response,
         chatbotType,
         whatsappSent,
         source,
-        processingLogs
-      }),
+        processingLogs,
+        messageId: messageId || undefined
+    }
+
+    return new Response(
+      JSON.stringify(responseData),
       {
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
       }
@@ -1052,8 +1070,43 @@ async function handleClientMessage(
   userAgent: string | undefined,
   processingLogs: ProcessingLog[],
   addLog: Function
-): Promise<string> {
+): Promise<{ response: string; messageId: string }> {
   try {
+    addLog('CLIENT_MESSAGE_START', { userIdentifier, source, textLength: text?.length || 0 })
+    
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error('Missing Supabase environment variables')
+    }
+    
+    const supabase = createClient(supabaseUrl, supabaseServiceKey)
+
+    // Save user message first with guaranteed persistence
+    const { data: savedUserMessage, error: saveUserError } = await supabase
+      .from('customer_conversations')
+      .insert({
+        phone_number: source === 'whatsapp' ? userIdentifier : null,
+        web_user_id: source === 'web' ? userIdentifier : null,
+        session_id: sessionId,
+        source: source,
+        content: text || 'Message sans contenu',
+        sender: 'user',
+        intent: 'client',
+        user_agent: userAgent,
+        created_at: new Date().toISOString()
+      })
+      .select('id')
+      .single()
+
+    if (saveUserError) {
+      addLog('SAVE_USER_MESSAGE_ERROR', { error: saveUserError.message }, false)
+      console.error('Failed to save user message:', saveUserError)
+    } else {
+      addLog('USER_MESSAGE_SAVED', { messageId: savedUserMessage.id })
+    }
+
     const groq = await getSystemGroqClient()
     
     const completion = await callGroqWithRetry(
@@ -1064,6 +1117,8 @@ async function handleClientMessage(
           content: `Vous êtes un assistant de service client pour une entreprise de télécommunications.
           Votre objectif est d'aider les clients avec leurs demandes, problèmes et questions.
           Soyez professionnel, courtois et orienté solution.
+          Fournissez des instructions claires et demandez des clarifications si nécessaire.
+          Si vous ne pouvez pas résoudre un problème, proposez de l'escalader vers un agent humain.
           ${source === 'web' ? 'L\'utilisateur vous contacte via votre site web.' : 'L\'utilisateur vous contacte via WhatsApp.'}`
         },
         { role: "user", content: text || 'Demande d\'assistance' }
@@ -1078,22 +1133,430 @@ async function handleClientMessage(
     const response = completion.choices[0]?.message?.content || 
       "Je suis désolé, je n'ai pas pu traiter votre demande. Un agent vous contactera bientôt."
 
-    // Save conversation
-    await saveClientConversation(userIdentifier, source, text, response, sessionId, userAgent, addLog)
+    // Save bot response with guaranteed persistence
+    const { data: savedBotMessage, error: saveBotError } = await supabase
+      .from('customer_conversations')
+      .insert({
+        phone_number: source === 'whatsapp' ? userIdentifier : null,
+        web_user_id: source === 'web' ? userIdentifier : null,
+        session_id: sessionId,
+        source: source,
+        content: response,
+        sender: 'bot',
+        intent: 'client',
+        user_agent: userAgent,
+        response_time: (Date.now() - Date.now()) / 1000, // Will be calculated properly
+        created_at: new Date().toISOString()
+      })
+      .select('id')
+      .single()
 
-    return response
+    if (saveBotError) {
+      addLog('SAVE_BOT_MESSAGE_ERROR', { error: saveBotError.message }, false)
+      console.error('Failed to save bot message:', saveBotError)
+    } else {
+      addLog('BOT_MESSAGE_SAVED', { messageId: savedBotMessage.id })
+    }
+
+    addLog('CLIENT_MESSAGE_COMPLETE', { responseLength: response.length })
+    
+    return {
+      response,
+      messageId: savedBotMessage?.id || 'unknown'
+    }
 
   } catch (error) {
     addLog('CLIENT_ERROR', { error: error.message, source }, false)
-    if (source === 'web') {
-      return "Merci pour votre message. Notre équipe du service client vous répondra dans les plus brefs délais."
-    } else {
-      return "Merci pour votre message. Un agent du service client vous répondra dans les plus brefs délais."
+    
+    const errorResponse = source === 'web' 
+      ? "Merci pour votre message. Notre équipe du service client vous répondra dans les plus brefs délais."
+      : "Merci pour votre message. Un agent du service client vous répondra dans les plus brefs délais."
+    
+    return {
+      response: errorResponse,
+      messageId: 'error'
     }
   }
 }
 
 async function handleQuizMessage(
+  userIdentifier: string,
+  source: string,
+  text: string | undefined,
+  sessionId: string | undefined,
+  userAgent: string | undefined,
+  processingLogs: ProcessingLog[],
+  addLog: Function
+): Promise<{ response: string; messageId: string }> {
+  try {
+    addLog('QUIZ_MESSAGE_START', { userIdentifier, source, textLength: text?.length || 0 })
+    
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error('Missing Supabase environment variables')
+    }
+    
+    const supabase = createClient(supabaseUrl, supabaseServiceKey)
+
+    // Get or create quiz user
+    let quizUser
+    try {
+      const { data: existingUser, error: getUserError } = await supabase
+        .from('quiz_users')
+        .select('*')
+        .eq('phone_number', userIdentifier)
+        .maybeSingle()
+
+      if (existingUser) {
+        quizUser = existingUser
+        addLog('EXISTING_QUIZ_USER', { userId: existingUser.id, score: existingUser.score })
+      } else {
+        // Create new quiz user
+        const { data: newUser, error: createError } = await supabase
+          .from('quiz_users')
+          .insert({
+            phone_number: userIdentifier,
+            score: 0,
+            profile: 'discovery',
+            current_step: 0,
+            status: 'active',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .select()
+          .single()
+
+        if (createError) {
+          throw new Error(`Failed to create quiz user: ${createError.message}`)
+        }
+
+        quizUser = newUser
+        addLog('NEW_QUIZ_USER_CREATED', { userId: newUser.id })
+      }
+    } catch (userError) {
+      addLog('QUIZ_USER_ERROR', { error: userError.message }, false)
+      throw new Error(`Quiz user management failed: ${userError.message}`)
+    }
+
+    // Save user message
+    const { data: savedUserMessage, error: saveUserError } = await supabase
+      .from('customer_conversations')
+      .insert({
+        phone_number: source === 'whatsapp' ? userIdentifier : null,
+        web_user_id: source === 'web' ? userIdentifier : null,
+        session_id: sessionId,
+        source: source,
+        content: text || 'Quiz interaction',
+        sender: 'user',
+        intent: 'quiz',
+        user_agent: userAgent,
+        created_at: new Date().toISOString()
+      })
+      .select('id')
+      .single()
+
+    if (saveUserError) {
+      addLog('SAVE_QUIZ_USER_MESSAGE_ERROR', { error: saveUserError.message }, false)
+    } else {
+      addLog('QUIZ_USER_MESSAGE_SAVED', { messageId: savedUserMessage.id })
+    }
+
+    // Get quiz questions
+    const { data: questions, error: questionsError } = await supabase
+      .from('quiz_questions')
+      .select('*')
+      .order('order_index', { ascending: true })
+
+    if (questionsError) {
+      throw new Error(`Failed to get quiz questions: ${questionsError.message}`)
+    }
+
+    if (!questions || questions.length === 0) {
+      const noQuestionsResponse = "Désolé, aucune question n'est disponible pour le moment."
+      
+      const { data: savedResponse } = await supabase
+        .from('customer_conversations')
+        .insert({
+          phone_number: source === 'whatsapp' ? userIdentifier : null,
+          web_user_id: source === 'web' ? userIdentifier : null,
+          session_id: sessionId,
+          source: source,
+          content: noQuestionsResponse,
+          sender: 'bot',
+          intent: 'quiz',
+          created_at: new Date().toISOString()
+        })
+        .select('id')
+        .single()
+
+      return {
+        response: noQuestionsResponse,
+        messageId: savedResponse?.id || 'no-questions'
+      }
+    }
+
+    // Process quiz logic
+    let response = ''
+    let pointsAwarded = 0
+    
+    if (quizUser.current_step < questions.length) {
+      const currentQuestion = questions[quizUser.current_step]
+      
+      // Check if this is an answer to the current question
+      if (text && isQuizAnswer(text, currentQuestion)) {
+        // Process the answer
+        const answerResult = await processQuizAnswerLogic(text, currentQuestion, quizUser, supabase, addLog)
+        pointsAwarded = answerResult.pointsAwarded
+        
+        // Move to next question or complete quiz
+        const nextStep = quizUser.current_step + 1
+        
+        if (nextStep >= questions.length) {
+          // Quiz completed
+          await supabase
+            .from('quiz_users')
+            .update({
+              status: 'completed',
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', quizUser.id)
+
+          response = `🎉 Félicitations ! Vous avez terminé le quiz avec un score de ${quizUser.score + pointsAwarded} points.\n\nVotre profil marketing: ${determineProfile(quizUser.score + pointsAwarded)}\n\nMerci pour votre participation !`
+          addLog('QUIZ_COMPLETED', { userId: quizUser.id, finalScore: quizUser.score + pointsAwarded })
+        } else {
+          // Move to next question
+          await supabase
+            .from('quiz_users')
+            .update({
+              current_step: nextStep,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', quizUser.id)
+
+          const nextQuestion = questions[nextStep]
+          response = formatQuizQuestionForDisplay(nextQuestion, nextStep + 1, questions.length)
+          addLog('NEXT_QUESTION_PRESENTED', { questionId: nextQuestion.id, step: nextStep + 1 })
+        }
+      } else {
+        // Present current question
+        response = formatQuizQuestionForDisplay(currentQuestion, quizUser.current_step + 1, questions.length)
+        addLog('CURRENT_QUESTION_PRESENTED', { questionId: currentQuestion.id, step: quizUser.current_step + 1 })
+      }
+    } else {
+      // Quiz already completed
+      response = `Vous avez déjà terminé le quiz avec un score de ${quizUser.score} points. Votre profil: ${quizUser.profile.toUpperCase()}`
+      addLog('QUIZ_ALREADY_COMPLETED', { userId: quizUser.id, score: quizUser.score })
+    }
+
+    // Save bot response with guaranteed persistence
+    const { data: savedBotMessage, error: saveBotError } = await supabase
+      .from('customer_conversations')
+      .insert({
+        phone_number: source === 'whatsapp' ? userIdentifier : null,
+        web_user_id: source === 'web' ? userIdentifier : null,
+        session_id: sessionId,
+        source: source,
+        content: response,
+        sender: 'bot',
+        intent: 'quiz',
+        user_agent: userAgent,
+        created_at: new Date().toISOString()
+      })
+      .select('id')
+      .single()
+
+    if (saveBotError) {
+      addLog('SAVE_QUIZ_BOT_MESSAGE_ERROR', { error: saveBotError.message }, false)
+      console.error('Failed to save quiz bot message:', saveBotError)
+    } else {
+      addLog('QUIZ_BOT_MESSAGE_SAVED', { messageId: savedBotMessage.id })
+    }
+
+    addLog('QUIZ_MESSAGE_COMPLETE', { responseLength: response.length, pointsAwarded })
+    
+    return {
+      response,
+      messageId: savedBotMessage?.id || 'quiz-response'
+    }
+
+  } catch (error) {
+    addLog('QUIZ_ERROR', { error: error.message, source }, false)
+    
+    const errorResponse = "Bienvenue au quiz ! Posez-moi une question ou demandez un défi."
+    
+    return {
+      response: errorResponse,
+      messageId: 'quiz-error'
+    }
+  }
+}
+
+// Helper functions for quiz processing
+function isQuizAnswer(text: string, question: any): boolean {
+  const input = text.toLowerCase().trim()
+  
+  switch (question.type) {
+    case 'quiz':
+      return ['vrai', 'faux', 'true', 'false', 'oui', 'non', 'yes', 'no'].includes(input)
+    case 'personal':
+    case 'preference':
+      return input.length > 0 && input !== 'skip' && input !== 'passer'
+    default:
+      return false
+  }
+}
+
+async function processQuizAnswerLogic(
+  userAnswer: string, 
+  question: any, 
+  quizUser: any, 
+  supabase: any, 
+  addLog: Function
+): Promise<{ pointsAwarded: number; isCorrect: boolean }> {
+  let pointsAwarded = 0
+  let isCorrect = false
+
+  try {
+    switch (question.type) {
+      case 'quiz':
+        const normalizedAnswer = userAnswer.toLowerCase().trim()
+        const userAnswerBool = normalizedAnswer === 'vrai' || normalizedAnswer === 'true' || normalizedAnswer === 'oui'
+        isCorrect = userAnswerBool === question.correct_answer
+        
+        if (isCorrect && question.points?.value) {
+          pointsAwarded = question.points.value
+        }
+        break
+
+      case 'personal':
+        pointsAwarded = 5
+        isCorrect = true
+        
+        // Update user profile with personal information
+        const personalUpdates: any = {}
+        const lowerQuestion = question.text.toLowerCase()
+        
+        if (lowerQuestion.includes('nom') && !lowerQuestion.includes('prénom')) {
+          personalUpdates.name = userAnswer
+        } else if (lowerQuestion.includes('email')) {
+          personalUpdates.email = userAnswer
+        } else if (lowerQuestion.includes('adresse')) {
+          personalUpdates.address = userAnswer
+        } else if (lowerQuestion.includes('profession')) {
+          personalUpdates.profession = userAnswer
+        }
+
+        if (Object.keys(personalUpdates).length > 0) {
+          await supabase
+            .from('quiz_users')
+            .update({
+              ...personalUpdates,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', quizUser.id)
+        }
+        break
+
+      case 'preference':
+        pointsAwarded = 3
+        isCorrect = true
+        
+        // Update preferences
+        const currentPreferences = quizUser.preferences || {}
+        const updatedPreferences = {
+          ...currentPreferences,
+          [question.text]: userAnswer,
+          lastUpdated: new Date().toISOString()
+        }
+
+        await supabase
+          .from('quiz_users')
+          .update({
+            preferences: updatedPreferences,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', quizUser.id)
+        break
+    }
+
+    // Save the answer
+    const { error: answerError } = await supabase
+      .from('quiz_answers')
+      .insert({
+        user_id: quizUser.id,
+        question_id: question.id,
+        answer: userAnswer,
+        points_awarded: pointsAwarded,
+        created_at: new Date().toISOString()
+      })
+
+    if (answerError) {
+      addLog('SAVE_QUIZ_ANSWER_ERROR', { error: answerError.message }, false)
+      console.error('Failed to save quiz answer:', answerError)
+    } else {
+      addLog('QUIZ_ANSWER_SAVED', { questionId: question.id, pointsAwarded, isCorrect })
+    }
+
+    // Update user score and profile
+    const newScore = quizUser.score + pointsAwarded
+    const newProfile = determineProfile(newScore)
+
+    await supabase
+      .from('quiz_users')
+      .update({
+        score: newScore,
+        profile: newProfile,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', quizUser.id)
+
+    addLog('QUIZ_USER_UPDATED', { newScore, newProfile })
+
+    return { pointsAwarded, isCorrect }
+
+  } catch (error) {
+    addLog('QUIZ_ANSWER_PROCESSING_ERROR', { error: error.message }, false)
+    return { pointsAwarded: 0, isCorrect: false }
+  }
+}
+
+function determineProfile(score: number): string {
+  if (score >= 80) return 'vip'
+  if (score >= 40) return 'active'
+  return 'discovery'
+}
+
+function formatQuizQuestionForDisplay(question: any, currentNumber: number, totalQuestions: number): string {
+  let formattedQuestion = `📋 Question ${currentNumber}/${totalQuestions}\n\n${question.text}`
+  
+  switch (question.type) {
+    case 'quiz':
+      formattedQuestion += '\n\n💡 Répondez par "Vrai" ou "Faux"'
+      if (question.points?.value) {
+        formattedQuestion += `\n🏆 Points possibles: ${question.points.value}`
+      }
+      break
+      
+    case 'personal':
+      formattedQuestion += '\n\n✍️ Veuillez fournir votre réponse'
+      break
+      
+    case 'preference':
+      if (question.options && Array.isArray(question.options)) {
+        formattedQuestion += '\n\nOptions disponibles:\n'
+        question.options.forEach((option: string, index: number) => {
+          formattedQuestion += `${index + 1}. ${option}\n`
+        })
+      }
+      break
+  }
+  
+  return formattedQuestion
+}
+
+async function handleQuizMessage_OLD(
   userIdentifier: string,
   source: string,
   text: string | undefined,
@@ -1135,6 +1598,100 @@ async function handleQuizMessage(
   } catch (error) {
     addLog('QUIZ_ERROR', { error: error.message, source }, false)
     return "Bienvenue au quiz ! Posez-moi une question ou demandez un défi."
+  }
+}
+
+async function handleQuizMessage_DEPRECATED(
+  userIdentifier: string,
+  source: string,
+  text: string | undefined,
+  sessionId: string | undefined,
+  userAgent: string | undefined,
+  processingLogs: ProcessingLog[],
+  addLog: Function
+): Promise<string> {
+  try {
+    const groq = await getSystemGroqClient()
+    
+    const completion = await callGroqWithRetry(
+      groq,
+      [
+        {
+          role: "system",
+          content: `Vous êtes un maître de quiz qui crée des quiz éducatifs engageants.
+          Votre objectif est de rendre l'apprentissage amusant grâce à des questions et défis interactifs.
+          Soyez enthousiaste, encourageant et fournissez des commentaires informatifs.
+          ${source === 'web' ? 'L\'utilisateur participe via votre site web.' : 'L\'utilisateur participe via WhatsApp.'}`
+        },
+        { role: "user", content: text || 'Commencer le quiz' }
+      ],
+      "llama3-70b-8192",
+      0.7,
+      1500,
+      3,
+      addLog
+    )
+
+    const response = completion.choices[0]?.message?.content || 
+      "Bienvenue au quiz ! Êtes-vous prêt à tester vos connaissances ?"
+
+    // Save conversation
+    await saveQuizConversation(userIdentifier, source, text, response, sessionId, userAgent, addLog)
+
+    return response
+
+  } catch (error) {
+    addLog('QUIZ_ERROR', { error: error.message, source }, false)
+    return "Bienvenue au quiz ! Posez-moi une question ou demandez un défi."
+  }
+}
+
+async function handleQuizMessage_ORIGINAL(
+  userIdentifier: string,
+  source: string,
+  text: string | undefined,
+  sessionId: string | undefined,
+  userAgent: string | undefined,
+  processingLogs: ProcessingLog[],
+  addLog: Function
+): Promise<string> {
+  try {
+    const groq = await getSystemGroqClient()
+    
+    const completion = await callGroqWithRetry(
+      groq,
+      [
+        {
+          role: "system",
+          content: `Vous êtes un maître de quiz qui crée des quiz éducatifs engageants.
+          Votre objectif est de rendre l'apprentissage amusant grâce à des questions et défis interactifs.
+          Soyez enthousiaste, encourageant et fournissez des commentaires informatifs.
+          ${source === 'web' ? 'L\'utilisateur participe via votre site web.' : 'L\'utilisateur participe via WhatsApp.'}`
+        },
+        { role: "user", content: text || 'Commencer le quiz' }
+      ],
+      "llama3-70b-8192",
+      0.7,
+      1500,
+      3,
+      addLog
+    )
+
+    const response = completion.choices[0]?.message?.content || 
+      "Bienvenue au quiz ! Êtes-vous prêt à tester vos connaissances ?"
+
+    // Save conversation
+    await saveQuizConversation(userIdentifier, source, text, response, sessionId, userAgent, addLog)
+
+    return response
+
+  } catch (error) {
+    addLog('QUIZ_ERROR', { error: error.message, source }, false)
+    if (source === 'web') {
+      return "Merci pour votre message. Notre équipe du service client vous répondra dans les plus brefs délais."
+    } else {
+      return "Merci pour votre message. Un agent du service client vous répondra dans les plus brefs délais."
+    }
   }
 }
 

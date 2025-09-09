@@ -4,6 +4,9 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import DashboardCharts from '../components/DashboardCharts';
+import ChatbotHealthMonitor from '../components/ChatbotHealthMonitor';
+import RealTimeSync from '../components/RealTimeSync';
+import { subscribeToModuleUpdates } from '../lib/chatbot-communication';
 
 interface DashboardStats {
   whatsapp: {
@@ -28,6 +31,7 @@ interface DashboardStats {
     totalParticipants: number;
     averageScore: number;
     completionRate: number;
+    profileBreakdown: { discovery: number; active: number; vip: number };
   };
 }
 
@@ -46,7 +50,7 @@ const Dashboard = () => {
     whatsapp: { totalMessages: 0, deliveryRate: 0, activeChats: 0 },
     education: { activeStudents: 0, totalSessions: 0, averageScore: 0, subjectDistribution: {} },
     customerService: { totalTickets: 0, responseTime: 0, satisfactionRate: 0, commonTopics: [] },
-    quiz: { activeGames: 0, totalParticipants: 0, averageScore: 0, completionRate: 0 }
+    quiz: { activeGames: 0, totalParticipants: 0, averageScore: 0, completionRate: 0, profileBreakdown: { discovery: 0, active: 0, vip: 0 } }
   });
   const [isLoading, setIsLoading] = useState(true);
   const [subscription, setSubscription] = useState<SubscriptionInfo>({ 
@@ -60,6 +64,36 @@ const Dashboard = () => {
 
   useEffect(() => {
     fetchDashboardStats();
+    
+    // Subscribe to real-time updates from all chatbot modules
+    const unsubscribeConversations = subscribeToModuleUpdates('conversations', (payload) => {
+      console.log('Dashboard received conversations update:', payload);
+      fetchDashboardStats();
+    });
+
+    const unsubscribeQuiz = subscribeToModuleUpdates('quiz_analytics', (payload) => {
+      console.log('Dashboard received quiz analytics update:', payload);
+      if (payload.action === 'analytics_updated') {
+        setStats(prev => ({
+          ...prev,
+          quiz: {
+            ...prev.quiz,
+            ...payload.analytics
+          }
+        }));
+      }
+    });
+
+    const unsubscribeCustomerService = subscribeToModuleUpdates('customer_service', (payload) => {
+      console.log('Dashboard received customer service update:', payload);
+      fetchDashboardStats();
+    });
+
+    return () => {
+      unsubscribeConversations();
+      unsubscribeQuiz();
+      unsubscribeCustomerService();
+    };
   }, [user, isAdmin]);
 
   const fetchDashboardStats = async () => {
@@ -115,7 +149,7 @@ const Dashboard = () => {
           subjectDistribution: calculateSubjectDistribution(educationSessions || [])
         },
         customerService: {
-          totalTickets: customerMessages?.length || 0,
+          totalTickets: (customerMessages?.length || 0) + (students?.length || 0), // Include client data
           responseTime: calculateAverageResponseTime(customerMessages || []),
           satisfactionRate: 85, // À implémenter: calcul réel
           commonTopics: calculateCommonTopics(customerMessages || [])
@@ -124,9 +158,32 @@ const Dashboard = () => {
           activeGames: quizGames?.filter(g => g.status === 'active').length || 0,
           totalParticipants: quizParticipants?.length || 0,
           averageScore: calculateQuizAverageScore(quizParticipants || []),
-          completionRate: calculateQuizCompletionRate(quizParticipants || [])
+          completionRate: calculateQuizCompletionRate(quizParticipants || []),
+          profileBreakdown: { discovery: 0, active: 0, vip: 0 }
         }
       });
+
+      // Load marketing quiz stats
+      const { data: quizUsers } = await supabase
+        .from('quiz_users')
+        .select('*');
+
+      if (quizUsers) {
+        const profileBreakdown = {
+          discovery: quizUsers.filter(u => u.profile === 'discovery').length,
+          active: quizUsers.filter(u => u.profile === 'active').length,
+          vip: quizUsers.filter(u => u.profile === 'vip').length
+        };
+
+        setStats(prev => ({
+          ...prev,
+          quiz: {
+            ...prev.quiz,
+            totalParticipants: quizUsers.length,
+            profileBreakdown
+          }
+        }));
+      }
 
       setIsLoading(false);
     } catch (error) {
@@ -220,6 +277,20 @@ const Dashboard = () => {
   return (
     <div className="p-8">
       <h1 className="text-2xl font-bold text-gray-900 mb-8">Tableau de Bord</h1>
+      
+      {/* Real-time Sync Status */}
+      <div className="mb-6 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <RealTimeSync onSyncUpdate={(module, data) => {
+            console.log(`Dashboard sync update from ${module}:`, data);
+          }} />
+        </div>
+      </div>
+
+      {/* Chatbot Health Monitor */}
+      <div className="mb-8">
+        <ChatbotHealthMonitor />
+      </div>
 
       {/* Subscription Status */}
       <div className="mb-8 grid grid-cols-1 md:grid-cols-1 gap-6">
@@ -334,7 +405,7 @@ const Dashboard = () => {
             <div className="bg-white rounded-xl shadow-sm p-6">
               <div className="flex items-center gap-3 mb-2">
                 <MessageSquare className="w-5 h-5 text-blue-600" />
-                <h3 className="font-medium text-gray-900">Tickets traités</h3>
+                <h3 className="font-medium text-gray-900">Clients traités</h3>
               </div>
               <p className="text-2xl font-semibold text-gray-900">{stats.customerService.totalTickets}</p>
             </div>
@@ -361,36 +432,45 @@ const Dashboard = () => {
         <div className="mb-8">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <Trophy className="w-5 h-5 text-yellow-500" />
-            Quiz
+            Quiz Marketing
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
             <div className="bg-white rounded-xl shadow-sm p-6">
               <div className="flex items-center gap-3 mb-2">
-                <Activity className="w-5 h-5 text-blue-600" />
-                <h3 className="font-medium text-gray-900">Jeux actifs</h3>
-              </div>
-              <p className="text-2xl font-semibold text-gray-900">{stats.quiz.activeGames}</p>
-            </div>
-            <div className="bg-white rounded-xl shadow-sm p-6">
-              <div className="flex items-center gap-3 mb-2">
-                <Users className="w-5 h-5 text-green-600" />
-                <h3 className="font-medium text-gray-900">Participants</h3>
+                <Users className="w-5 h-5 text-blue-600" />
+                <h3 className="font-medium text-gray-900">Total Participants</h3>
               </div>
               <p className="text-2xl font-semibold text-gray-900">{stats.quiz.totalParticipants}</p>
             </div>
             <div className="bg-white rounded-xl shadow-sm p-6">
               <div className="flex items-center gap-3 mb-2">
-                <Trophy className="w-5 h-5 text-yellow-500" />
-                <h3 className="font-medium text-gray-900">Score moyen</h3>
+                <Trophy className="w-5 h-5 text-yellow-600" />
+                <h3 className="font-medium text-gray-900">Score Moyen</h3>
               </div>
               <p className="text-2xl font-semibold text-gray-900">{stats.quiz.averageScore.toFixed(1)}</p>
             </div>
             <div className="bg-white rounded-xl shadow-sm p-6">
               <div className="flex items-center gap-3 mb-2">
-                <CheckCircle className="w-5 h-5 text-yellow-500" />
-                <h3 className="font-medium text-gray-900">Taux de complétion</h3>
+                <CheckCircle className="w-5 h-5 text-green-600" />
+                <h3 className="font-medium text-gray-900">Taux de Complétion</h3>
               </div>
               <p className="text-2xl font-semibold text-gray-900">{stats.quiz.completionRate.toFixed(1)}%</p>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-xl shadow-sm p-6">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">Répartition des Profils Marketing</h3>
+            <div className="grid grid-cols-3 gap-6">
+              <div className="text-center p-4 bg-blue-50 rounded-lg">
+                <div className="text-2xl font-bold text-blue-600 mb-1">{stats.quiz.profileBreakdown?.discovery || 0}</div>
+                <div className="text-sm font-medium text-blue-800">DISCOVERY</div>
+                <div className="text-xs text-blue-600">Nouveaux prospects</div>
+              </div>
+              <div className="text-center p-4 bg-green-50 rounded-lg">
+                <div className="text-2xl font-bold text-green-600 mb-1">{stats.quiz.profileBreakdown?.active || 0}</div>
+                <div className="text-sm font-medium text-green-800">ACTIVE</div>
+                <div className="text-xs text-green-600">Clients engagés</div>
+              </div>
             </div>
           </div>
         </div>

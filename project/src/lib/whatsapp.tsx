@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { checkSubscriptionStatus } from './subscription';
+import { uploadMediaToFirebase, validateFirebaseConfig } from './firebase-config';
 
 // Define the webhook endpoint for processing messages
 const WEBHOOK_ENDPOINT = 'https://webhook-telecombusiness.onrender.com/webhook';
@@ -608,6 +609,95 @@ export function sanitizeMessageContent(message: string): string {
 }
 
 /**
+ * Normalizes phone number to international format
+ * @param phoneNumber Raw phone number
+ * @returns Normalized phone number with + prefix
+ */
+export function normalizePhoneNumber(phoneNumber: string): string {
+  if (!phoneNumber || typeof phoneNumber !== 'string') {
+    return '';
+  }
+
+  // Remove all non-digit characters except the plus sign
+  let cleaned = phoneNumber.replace(/[^\d+]/g, '');
+  
+  // If it already starts with +, return as is (assuming it's already formatted)
+  if (cleaned.startsWith('+')) {
+    return cleaned;
+  }
+  
+  // Common country codes for automatic detection
+  const countryCodeMap: Record<string, string> = {
+    '242': '+242', // Congo
+    '221': '+221', // Senegal
+    '223': '+223', // Mali
+    '224': '+224', // Guinea
+    '225': '+225', // Ivory Coast
+    '226': '+226', // Burkina Faso
+    '227': '+227', // Niger
+    '228': '+228', // Togo
+    '229': '+229', // Benin
+    '230': '+230', // Mauritius
+    '231': '+231', // Liberia
+    '232': '+232', // Sierra Leone
+    '233': '+233', // Ghana
+    '234': '+234', // Nigeria
+    '235': '+235', // Chad
+    '236': '+236', // Central African Republic
+    '237': '+237', // Cameroon
+    '238': '+238', // Cape Verde
+    '239': '+239', // São Tomé and Príncipe
+    '240': '+240', // Equatorial Guinea
+    '241': '+241', // Gabon
+    '243': '+243', // Democratic Republic of Congo
+    '244': '+244', // Angola
+    '245': '+245', // Guinea-Bissau
+    '246': '+246', // British Indian Ocean Territory
+    '247': '+247', // Ascension Island
+    '248': '+248', // Seychelles
+    '249': '+249', // Sudan
+    '250': '+250', // Rwanda
+    '251': '+251', // Ethiopia
+    '252': '+252', // Somalia
+    '253': '+253', // Djibouti
+    '254': '+254', // Kenya
+    '255': '+255', // Tanzania
+    '256': '+256', // Uganda
+    '257': '+257', // Burundi
+    '258': '+258', // Mozambique
+    '260': '+260', // Zambia
+    '261': '+261', // Madagascar
+    '262': '+262', // Réunion/Mayotte
+    '263': '+263', // Zimbabwe
+    '264': '+264', // Namibia
+    '265': '+265', // Malawi
+    '266': '+266', // Lesotho
+    '267': '+267', // Botswana
+    '268': '+268', // Eswatini
+    '269': '+269', // Comoros
+    '290': '+290', // Saint Helena
+    '291': '+291', // Eritrea
+    '297': '+297', // Aruba
+    '298': '+298', // Faroe Islands
+    '299': '+299'  // Greenland
+  };
+  
+  // Check if the number starts with a known country code
+  for (const [code, prefix] of Object.entries(countryCodeMap)) {
+    if (cleaned.startsWith(code)) {
+      return prefix + cleaned.substring(code.length);
+    }
+  }
+  
+  // If it starts with 0, remove it and add default country code (+242 for Congo)
+  if (cleaned.startsWith('0')) {
+    return '+242' + cleaned.substring(1);
+  }
+  
+  // If no country code detected, add default (+242 for Congo)
+  return '+242' + cleaned;
+}
+/**
  * Enhanced message sanitization specifically for WhatsApp
  * Removes all HTML content and ensures clean plain text
  * @param message Raw message content
@@ -687,14 +777,32 @@ export async function sendWhatsAppMessages(
       hasAccessToken: !!accessToken,
       phoneNumberId: phoneNumberId || 'not found'
     });
-    // Validate phone numbers
-    const validMessages = messages.filter(msg => {
+    
+    // Normalize and validate phone numbers
+    const validMessages = messages.map(msg => ({
+      ...msg,
+      phoneNumber: normalizePhoneNumber(msg.phoneNumber)
+    })).filter(msg => {
       const phoneRegex = /^\+[1-9]\d{1,14}$/;
-      return phoneRegex.test(msg.phoneNumber);
+      const isValid = phoneRegex.test(msg.phoneNumber);
+      
+      if (!isValid) {
+        console.warn('❌ [WHATSAPP-SEND] Invalid phone number after normalization:', {
+          original: messages.find(m => m === msg)?.phoneNumber,
+          normalized: msg.phoneNumber
+        });
+      }
+      
+      return isValid;
     });
 
     if (validMessages.length === 0) {
-      throw new Error('No valid phone numbers found');
+      const originalNumbers = messages.map(m => m.phoneNumber);
+      console.error('❌ [WHATSAPP-SEND] No valid phone numbers after normalization:', {
+        originalNumbers,
+        normalizedNumbers: messages.map(m => normalizePhoneNumber(m.phoneNumber))
+      });
+      throw new Error(`No valid phone numbers found. Original numbers: ${originalNumbers.join(', ')}`);
     }
 
     console.log('📋 [WHATSAPP-SEND] Validated messages:', {
@@ -1389,4 +1497,37 @@ function getMockTemplates() {
       }
     }
   ];
+}
+
+/**
+ * Upload media file to Firebase and get public URL for WhatsApp
+ * @param file The media file to upload
+ * @returns Promise resolving to the public URL
+ */
+export async function uploadWhatsAppMedia(file: File): Promise<string> {
+  try {
+    console.log('📤 [WHATSAPP-MEDIA] Starting Firebase upload:', {
+      fileName: file.name,
+      fileSize: file.size,
+      fileType: file.type
+    });
+
+    // Validate Firebase configuration
+    if (!validateFirebaseConfig()) {
+      throw new Error('Firebase is not properly configured. Please check your environment variables.');
+    }
+
+    // Upload to Firebase Storage
+    const downloadURL = await uploadMediaToFirebase(file, 'whatsapp-media');
+    
+    console.log('✅ [WHATSAPP-MEDIA] Firebase upload successful:', {
+      fileName: file.name,
+      downloadURL: downloadURL.substring(0, 50) + '...'
+    });
+
+    return downloadURL;
+  } catch (error) {
+    console.error('❌ [WHATSAPP-MEDIA] Firebase upload failed:', error);
+    throw new Error(`Failed to upload media to Firebase: ${error.message}`);
+  }
 }

@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Upload, Download, Loader2, Phone, X, HelpCircle, FileText, Plus, Trash2, Clock, RefreshCw, Gauge, Save, AlertCircle, CheckCircle, XCircle, Settings, Filter } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import BackButton from '../components/BackButton';
+import { normalizePhoneNumber } from '../lib/whatsapp';
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -59,8 +60,8 @@ const NumberFiltering = () => {
         .map(line => line.trim())
         .filter(line => line.length > 0)
         .map(number => ({
-          number: number.replace(/[^0-9+]/g, ''),
-          normalizedNumber: normalizePhoneNumber(number.replace(/[^0-9+]/g, '')),
+          number: number,
+          normalizedNumber: normalizePhoneNumber(number),
           hasWhatsApp: null,
           status: 'pending' as const
         }));
@@ -70,29 +71,6 @@ const NumberFiltering = () => {
     reader.readAsText(file);
   };
 
-  const normalizePhoneNumber = (number: string): string => {
-    // Remove all non-digit characters except the plus sign
-    let cleaned = number.replace(/[^\d+]/g, '');
-    
-    // Ensure the number starts with a plus sign
-    if (!cleaned.startsWith('+')) {
-      // If it starts with a country code without plus (e.g. 33 for France)
-      if (cleaned.startsWith('33') || cleaned.startsWith('242') || cleaned.startsWith('221')) {
-        cleaned = '+' + cleaned;
-      } 
-      // If it starts with a 0, assume it's a local number and add country code
-      else if (cleaned.startsWith('0')) {
-        // Default to +242 (Congo) if no other information
-        cleaned = '+242' + cleaned.substring(1);
-      }
-      // If it doesn't start with 0 or known country code, assume it needs a plus
-      else {
-        cleaned = '+' + cleaned;
-      }
-    }
-    
-    return cleaned;
-  };
 
   const checkWhatsAppNumbers = async (phoneNumbers: string[]): Promise<ValidationResult[]> => {
     try {

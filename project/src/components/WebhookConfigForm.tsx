@@ -25,33 +25,42 @@ const WebhookConfigForm: React.FC<WebhookConfigFormProps> = ({ onSaved }) => {
       setLoading(true);
       setError(null);
 
-      // Get webhook URL from user_whatsapp_config
-      const { data, error } = await supabase
-        .from('user_whatsapp_config')
-        .select('webhook_url')
-        .eq('is_active', true)
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      // Try to get webhook URL from user_whatsapp_config
+      try {
+        const { data, error } = await supabase
+          .from('user_whatsapp_config')
+          .select('webhook_url')
+          .eq('is_active', true)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-      if (error) {
-        console.error('Error loading webhook config:', error);
-        setError('Error loading webhook configuration');
-        return;
-      }
-
-      if (data && data.webhook_url) {
-        setWebhookUrl(data.webhook_url);
-        // Extract verify token from URL if it contains one
-        const url = new URL(data.webhook_url);
-        const token = url.searchParams.get('verify_token');
-        if (token) {
-          setVerifyToken(token);
+        if (error) {
+          console.warn('Could not load webhook config from user_whatsapp_config:', error);
+          // This is not a critical error, just means no config exists yet
+          return;
         }
+
+        if (data && data.webhook_url) {
+          setWebhookUrl(data.webhook_url);
+          // Extract verify token from URL if it contains one
+          try {
+            const url = new URL(data.webhook_url);
+            const token = url.searchParams.get('verify_token');
+            if (token) {
+              setVerifyToken(token);
+            }
+          } catch (urlError) {
+            console.warn('Could not parse webhook URL:', urlError);
+          }
+        }
+      } catch (configError) {
+        console.warn('Error accessing webhook configuration:', configError);
+        // Not a critical error - user may not have configured webhooks yet
       }
     } catch (error) {
       console.error('Error in loadWebhookConfig:', error);
-      setError('Error loading webhook configuration');
+      // Don't set error for missing webhook config as it's optional
     } finally {
       setLoading(false);
     }

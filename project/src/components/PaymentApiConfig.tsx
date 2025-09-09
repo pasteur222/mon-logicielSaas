@@ -17,11 +17,6 @@ interface PaymentConfig {
 
 const PAYMENT_PROVIDERS = [
   { id: 'airtel', name: 'Airtel Money', icon: Smartphone, color: 'red' },
-  { id: 'mtn', name: 'MTN Mobile Money', icon: Smartphone, color: 'yellow' },
-  { id: 'vodacom', name: 'Vodacom M-Pesa', icon: Smartphone, color: 'red' },
-  { id: 'orange', name: 'Orange Money', icon: Smartphone, color: 'orange' },
-  { id: 'africell', name: 'Africell Money', icon: Smartphone, color: 'red' },
-  { id: 'moov', name: 'Moov Money', icon: Smartphone, color: 'blue' },
   { id: 'stripe', name: 'Stripe', icon: CreditCard, color: 'purple' },
   { id: 'paypal', name: 'PayPal', icon: Globe, color: 'blue' }
 ];
@@ -34,47 +29,6 @@ const PROVIDER_FIELDS: Record<string, { name: string; fields: Array<{ key: strin
       { key: 'client_secret', label: 'Client Secret', type: 'password', placeholder: '••••••••••••••••' },
       { key: 'api_endpoint', label: 'API Endpoint', type: 'text', placeholder: 'https://openapi.airtel.africa' },
       { key: 'country_code', label: 'Country Code', type: 'text', placeholder: 'CG' }
-    ]
-  },
-  mtn: {
-    name: 'MTN Mobile Money',
-    fields: [
-      { key: 'client_id', label: 'API User', type: 'text', placeholder: 'api_user_123' },
-      { key: 'client_secret', label: 'API Key', type: 'password', placeholder: '••••••••••••••••' },
-      { key: 'api_endpoint', label: 'API Endpoint', type: 'text', placeholder: 'https://api.mtn.com/collection/v1' },
-      { key: 'subscription_key', label: 'Subscription Key', type: 'password', placeholder: '••••••••••••••••' }
-    ]
-  },
-  vodacom: {
-    name: 'Vodacom M-Pesa',
-    fields: [
-      { key: 'client_id', label: 'API Key', type: 'text', placeholder: 'api_key_123' },
-      { key: 'client_secret', label: 'API Secret', type: 'password', placeholder: '••••••••••••••••' },
-      { key: 'api_endpoint', label: 'API Endpoint', type: 'text', placeholder: 'https://openapi.m-pesa.com/sandbox' }
-    ]
-  },
-  orange: {
-    name: 'Orange Money',
-    fields: [
-      { key: 'client_id', label: 'Merchant ID', type: 'text', placeholder: 'merchant_123' },
-      { key: 'client_secret', label: 'API Key', type: 'password', placeholder: '••••••••••••••••' },
-      { key: 'api_endpoint', label: 'API Endpoint', type: 'text', placeholder: 'https://api.orange.com/orange-money-webpay' }
-    ]
-  },
-  africell: {
-    name: 'Africell Money',
-    fields: [
-      { key: 'client_id', label: 'Merchant ID', type: 'text', placeholder: 'merchant_123' },
-      { key: 'client_secret', label: 'API Key', type: 'password', placeholder: '••••••••••••••••' },
-      { key: 'api_endpoint', label: 'API Endpoint', type: 'text', placeholder: 'https://api.africell.com/payments' }
-    ]
-  },
-  moov: {
-    name: 'Moov Money',
-    fields: [
-      { key: 'client_id', label: 'Merchant ID', type: 'text', placeholder: 'merchant_123' },
-      { key: 'client_secret', label: 'API Key', type: 'password', placeholder: '••••••••••••••••' },
-      { key: 'api_endpoint', label: 'API Endpoint', type: 'text', placeholder: 'https://api.moov.com/payments' }
     ]
   },
   stripe: {

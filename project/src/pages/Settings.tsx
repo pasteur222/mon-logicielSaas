@@ -73,33 +73,34 @@ const Settings = () => {
     try {
       setWebhookLoading(true);
       
-      // Get webhook configuration from Supabase
-      const { data, error } = await supabase
-        .from('webhook_config')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      
-      if (error) {
-        // If the table doesn't exist, we'll create it later
-        if (error.code === '42P01') {
-          console.warn('webhook_config table does not exist yet');
+      // Get webhook configuration from user_whatsapp_config instead
+      try {
+        const { data, error } = await supabase
+          .from('user_whatsapp_config')
+          .select('webhook_url')
+          .eq('user_id', user?.id)
+          .eq('is_active', true)
+          .maybeSingle();
+        
+        if (error) {
+          console.warn('Could not load webhook config:', error);
           return;
         }
-        throw error;
-      }
-      
-      if (data) {
-        setWebhookConfig({
-          url: data.url || '',
-          verify_token: data.verify_token || '',
-          is_active: data.is_active || false
-        });
+        
+        if (data && data.webhook_url) {
+          setWebhookConfig({
+            url: data.webhook_url,
+            verify_token: '', // Not stored separately anymore
+            is_active: true
+          });
+        }
+      } catch (configError) {
+        console.warn('Error loading webhook configuration:', configError);
+        // Not critical - webhook config is optional
       }
     } catch (error) {
       console.error('Error loading webhook config:', error);
-      setWebhookError('Failed to load webhook configuration');
+      // Don't set error for missing webhook config
     } finally {
       setWebhookLoading(false);
     }
@@ -485,17 +486,6 @@ const Settings = () => {
                 <span>Paramètres App</span>
               </button>
               <button
-                onClick={() => setActiveTab('appearance')}
-                className={`flex items-center gap-3 w-full px-4 py-2 text-left rounded-lg ${
-                  activeTab === 'appearance'
-                    ? 'bg-yellow-50 text-yellow-600'
-                    : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                <Palette className="w-5 h-5" />
-                <span>Apparence</span>
-              </button>
-              <button
                 onClick={() => setActiveTab('security')}
                 className={`flex items-center gap-3 w-full px-4 py-2 text-left rounded-lg ${
                   activeTab === 'security'
@@ -565,6 +555,35 @@ const Settings = () => {
                       <p className="mt-1 text-sm text-gray-500">
                         L'adresse email ne peut pas être modifiée
                       </p>
+                    </div>
+
+                    <div className="mt-6 pt-6 border-t border-gray-200">
+                      <h3 className="text-lg font-medium text-gray-900 mb-4">Préférences d'Apparence</h3>
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <label className="text-sm font-medium text-gray-700">Mode Sombre</label>
+                            <p className="text-xs text-gray-500">Activer le thème sombre pour réduire la fatigue oculaire</p>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={document.documentElement.classList.contains('dark')}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  document.documentElement.classList.add('dark');
+                                  localStorage.setItem('darkMode', 'true');
+                                } else {
+                                  document.documentElement.classList.remove('dark');
+                                  localStorage.setItem('darkMode', 'false');
+                                }
+                              }}
+                              className="sr-only"
+                            />
+                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-yellow-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-yellow-600"></div>
+                          </label>
+                        </div>
+                      </div>
                     </div>
                 </div>
                 
@@ -695,10 +714,6 @@ const Settings = () => {
 
             {activeTab === 'app' && (
               <AppSettingsManager />
-            )}
-
-            {activeTab === 'appearance' && (
-              <AppearanceSettings />
             )}
 
             {activeTab === 'security' && (

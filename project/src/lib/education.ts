@@ -280,11 +280,14 @@ function validateAndEnhanceAnalysis(analysis: any, userContext: any): any {
 
 export async function getOrCreateStudentProfile(phoneNumber: string): Promise<StudentProfile> {
   try {
+    // Normalize the phone number first
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+    
     // Check if student exists
     const { data: existingStudent } = await supabase
       .from('student_profiles')
       .select('*')
-      .eq('phone_number', phoneNumber)
+      .eq('phone_number', normalizedPhone)
       .single();
 
     if (existingStudent) {
@@ -301,7 +304,7 @@ export async function getOrCreateStudentProfile(phoneNumber: string): Promise<St
     const { data: newStudent, error } = await supabase
       .from('student_profiles')
       .insert({
-        phone_number: phoneNumber,
+        phone_number: normalizedPhone,
         level: '3ème', // Default level
         subjects: [],
         preferred_language: 'french'

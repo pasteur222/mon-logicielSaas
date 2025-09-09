@@ -97,7 +97,8 @@ const WhatsAppConfig = () => {
       }
     } catch (err) {
       console.error('Error loading WhatsApp config:', err);
-      setError('Failed to load your WhatsApp configuration');
+      // Don't show error for missing config as it's expected for new users
+      console.warn('No WhatsApp configuration found for user, using defaults');
     } finally {
       setLoading(false);
     }

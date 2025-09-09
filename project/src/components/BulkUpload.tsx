@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Upload, X, AlertCircle, FileText, Download, Send, RefreshCw, Check, Users, FileSpreadsheet } from 'lucide-react';
+import { Upload, X, AlertCircle, FileText, Download, Send, RefreshCw, Check, Users, FileSpreadsheet, Image, Video } from 'lucide-react';
 import Papa from 'papaparse';
 import RichTextEditor from './RichTextEditor';
+import { uploadWhatsAppMedia } from '../lib/whatsapp';
 
 interface BulkUploadProps {
   onClose: () => void;
@@ -18,6 +19,9 @@ const BulkUpload: React.FC<BulkUploadProps> = ({ onClose, onSend }) => {
   const [fileUploaded, setFileUploaded] = useState(false);
   const [validationStatus, setValidationStatus] = useState<'idle' | 'validating' | 'valid' | 'invalid'>('idle');
   const [message, setMessage] = useState('');
+  const [media, setMedia] = useState<{ type: 'image' | 'video' | 'document'; url: string } | null>(null);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [mediaUploadError, setMediaUploadError] = useState<string | null>(null);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -118,6 +122,59 @@ const BulkUpload: React.FC<BulkUploadProps> = ({ onClose, onSend }) => {
     URL.revokeObjectURL(url);
   };
 
+  const handleMediaUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setUploadingMedia(true);
+      setMediaUploadError(null);
+      setError(null);
+
+      console.log('📤 [BULK-UPLOAD] Starting media upload via Firebase:', {
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type
+      });
+
+      // Upload to Firebase and get public URL
+      const mediaUrl = await uploadWhatsAppMedia(file);
+      
+      // Determine media type
+      let mediaType: 'image' | 'video' | 'document' = 'document';
+      if (file.type.startsWith('image/')) {
+        mediaType = 'image';
+      } else if (file.type.startsWith('video/')) {
+        mediaType = 'video';
+      }
+
+      // Set the media for bulk messages
+      setMedia({
+        type: mediaType,
+        url: mediaUrl
+      });
+
+      console.log('✅ [BULK-UPLOAD] Media upload successful:', {
+        fileName: file.name,
+        mediaType,
+        mediaUrl: mediaUrl.substring(0, 50) + '...'
+      });
+
+    } catch (error) {
+      console.error('❌ [BULK-UPLOAD] Media upload failed:', error);
+      setMediaUploadError(error instanceof Error ? error.message : 'Failed to upload media');
+    } finally {
+      setUploadingMedia(false);
+      // Reset the input
+      event.target.value = '';
+    }
+  };
+
+  const handleRemoveMedia = () => {
+    setMedia(null);
+    setMediaUploadError(null);
+  };
+
   const handleSend = async () => {
     if (!parsedData.length) return;
 
@@ -126,30 +183,30 @@ const BulkUpload: React.FC<BulkUploadProps> = ({ onClose, onSend }) => {
       
       // For TXT files (simple phone numbers)
       if (headers.length === 1 && headers[0] === 'phoneNumber') {
-        await onSend(parsedData);
+        const dataWithMedia = parsedData.map(row => ({
+          ...row,
+          media: media
+        }));
+        await onSend(dataWithMedia);
       } else {
         // For CSV files with mappings
-        await onSend(parsedData.map(row => {
-          // Create variables array safely
-          const variablesArray: Array<{ name: string; value: string }> = [];
-          
-          Object.entries(mappings)
+        const processedData = parsedData.map(row => ({
+          ...row,
+          phoneNumber: row[mappings.phone],
+          name: mappings.name ? row[mappings.name] : undefined,
+          company: mappings.company ? row[mappings.company] : undefined,
+          message: message ? sanitizeWhatsAppMessage(message) : '',
+          media: media,
+          variables: Object.entries(mappings)
             .filter(([key]) => key !== 'phone')
-            .forEach(([key, columnName]) => {
+            .reduce((acc, [key, columnName]) => {
               if (columnName && row[columnName]) {
-                variablesArray.push({ name: key, value: row[columnName] });
+                acc[key] = row[columnName];
               }
-            });
-
-          return {
-            ...row,
-            phoneNumber: row[mappings.phone],
-            name: mappings.name ? row[mappings.name] : undefined,
-            company: mappings.company ? row[mappings.company] : undefined,
-            message: message ? sanitizeWhatsAppMessage(message) : '',
-            variables: variablesArray
-          };
+              return acc;
+            }, {} as Record<string, string>)
         }));
+        await onSend(processedData);
       }
       
       onClose();
@@ -349,6 +406,81 @@ const BulkUpload: React.FC<BulkUploadProps> = ({ onClose, onSend }) => {
                 </div>
 
                 <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Media (Optional)
+                  </label>
+                  
+                  {mediaUploadError && (
+                    <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700">
+                      <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                      <p className="text-sm">{mediaUploadError}</p>
+                    </div>
+                  )}
+
+                  {!media ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="file"
+                        id="bulk-media-upload"
+                        className="hidden"
+                        accept="image/*,video/*,.pdf,.doc,.docx"
+                        onChange={handleMediaUpload}
+                        disabled={uploadingMedia}
+                      />
+                      <label
+                        htmlFor="bulk-media-upload"
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer transition-colors ${
+                          uploadingMedia 
+                            ? 'bg-gray-400 text-white cursor-not-allowed' 
+                            : 'bg-blue-600 text-white hover:bg-blue-700'
+                        }`}
+                      >
+                        {uploadingMedia ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            Uploading...
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-4 h-4" />
+                            Upload Media
+                          </>
+                        )}
+                      </label>
+                    </div>
+                  ) : (
+                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          {media.type === 'image' && <Image className="w-5 h-5 text-blue-600" />}
+                          {media.type === 'video' && <Video className="w-5 h-5 text-blue-600" />}
+                          {media.type === 'document' && <FileText className="w-5 h-5 text-blue-600" />}
+                          <div>
+                            <p className="text-sm font-medium text-blue-800">
+                              {media.type === 'image' ? 'Image' : 
+                               media.type === 'video' ? 'Video' : 'Document'} attached
+                            </p>
+                            <p className="text-xs text-blue-600">
+                              Uploaded via Firebase - Will be sent with each message
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={handleRemoveMedia}
+                          className="text-red-600 hover:text-red-800"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <p className="mt-1 text-sm text-gray-500">
+                    Upload an image, video, or document to send with your messages
+                  </p>
+                </div>
+
+                <div>
                   <h3 className="text-sm font-medium text-gray-700 mb-2">Preview</h3>
                   <div className="border border-gray-200 rounded-lg overflow-hidden">
                     <div className="overflow-x-auto">
@@ -409,7 +541,7 @@ const BulkUpload: React.FC<BulkUploadProps> = ({ onClose, onSend }) => {
               </button>
               <button
                 onClick={handleSend}
-                disabled={!parsedData.length || (headers[0] !== 'phoneNumber' && !mappings.phone) || isProcessing}
+                disabled={!parsedData.length || (headers[0] !== 'phoneNumber' && !mappings.phone) || isProcessing || uploadingMedia}
                 className="flex items-center gap-2 px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {isProcessing ? (
@@ -420,7 +552,7 @@ const BulkUpload: React.FC<BulkUploadProps> = ({ onClose, onSend }) => {
                 ) : (
                   <>
                     <Send className="w-4 h-4" />
-                    {message ? 'Send to' : 'Import'} {parsedData.length} {parsedData.length === 1 ? 'Contact' : 'Contacts'}
+                    {message || media ? 'Send to' : 'Import'} {parsedData.length} {parsedData.length === 1 ? 'Contact' : 'Contacts'}
                   </>
                 )}
               </button>
@@ -431,5 +563,55 @@ const BulkUpload: React.FC<BulkUploadProps> = ({ onClose, onSend }) => {
     </div>
   );
 };
+
+// Helper function to sanitize WhatsApp messages (imported from whatsapp.tsx)
+function sanitizeWhatsAppMessage(message: string): string {
+  if (!message || typeof message !== 'string') {
+    return '';
+  }
+
+  let cleanMessage = message;
+  
+  // Step 1: Remove all HTML tags (including malformed ones)
+  cleanMessage = cleanMessage.replace(/<[^>]*>/g, '');
+  
+  // Step 2: Remove any remaining angle brackets
+  cleanMessage = cleanMessage.replace(/[<>]/g, '');
+  
+  // Step 3: Decode common HTML entities
+  const htmlEntities: Record<string, string> = {
+    '&amp;': '&',
+    '&lt;': '<',
+    '&gt;': '>',
+    '&quot;': '"',
+    '&#39;': "'",
+    '&nbsp;': ' ',
+    '&copy;': '©',
+    '&reg;': '®',
+    '&trade;': '™'
+  };
+  
+  Object.entries(htmlEntities).forEach(([entity, char]) => {
+    cleanMessage = cleanMessage.replace(new RegExp(entity, 'g'), char);
+  });
+  
+  // Step 4: Remove any remaining HTML entities
+  cleanMessage = cleanMessage.replace(/&[a-zA-Z0-9#]+;/g, '');
+  
+  // Step 5: Normalize whitespace
+  cleanMessage = cleanMessage.replace(/\s+/g, ' ').trim();
+  
+  // Step 6: Ensure message is not empty
+  if (cleanMessage.length === 0) {
+    throw new Error('Message is empty after sanitization');
+  }
+  
+  // Step 7: Limit message length for WhatsApp
+  if (cleanMessage.length > 4096) {
+    cleanMessage = cleanMessage.substring(0, 4093) + '...';
+  }
+  
+  return cleanMessage;
+}
 
 export default BulkUpload;

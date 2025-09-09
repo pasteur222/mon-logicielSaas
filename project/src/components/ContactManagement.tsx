@@ -82,20 +82,13 @@ const ContactManagement: React.FC<ContactManagementProps> = ({ onClose }) => {
           if (existing) {
             existing.first_name = student.first_name;
             existing.last_name = student.last_name;
-            if (student.last_active_at && (!existing.last_interaction || new Date(student.last_active_at) > new Date(existing.last_interaction))) {
+            // Skip education source - don't update source to education
+            if (!existing.last_interaction || (student.last_active_at && new Date(student.last_active_at) > new Date(existing.last_interaction))) {
               existing.last_interaction = student.last_active_at;
-              existing.source = 'education';
+              // Keep existing source instead of changing to education
             }
-          } else {
-            contactMap.set(student.phone_number, {
-              id: student.id,
-              phone_number: student.phone_number,
-              first_name: student.first_name,
-              last_name: student.last_name,
-              source: 'education',
-              last_interaction: student.last_active_at
-            });
           }
+          // Don't create new contacts from education source
         }
       });
 
@@ -208,8 +201,6 @@ const ContactManagement: React.FC<ContactManagementProps> = ({ onClose }) => {
     switch (source) {
       case 'customer_service':
         return <MessageSquare className="w-4 h-4 text-blue-600" />;
-      case 'education':
-        return <BookOpen className="w-4 h-4 text-green-600" />;
       case 'quiz':
         return <GamepadIcon className="w-4 h-4 text-yellow-600" />;
       default:
@@ -221,8 +212,6 @@ const ContactManagement: React.FC<ContactManagementProps> = ({ onClose }) => {
     switch (source) {
       case 'customer_service':
         return 'Service Client';
-      case 'education':
-        return 'Éducation';
       case 'quiz':
         return 'Quiz';
       default:
@@ -280,7 +269,6 @@ const ContactManagement: React.FC<ContactManagementProps> = ({ onClose }) => {
             >
               <option value="all">Toutes les sources</option>
               <option value="customer_service">Service Client</option>
-              <option value="education">Éducation</option>
               <option value="quiz">Quiz</option>
             </select>
           </div>
