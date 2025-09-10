@@ -1,29 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, Send, X, Save, RefreshCw, AlertCircle, CheckCircle, Repeat, Users } from 'lucide-react';
+import { Calendar, Clock, Send, X, Save, RefreshCw, AlertCircle, CheckCircle, Repeat, Users, Play, Pause, Settings } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { sendWhatsAppMessages } from '../lib/whatsapp';
 import { useAuth } from '../contexts/AuthContext';
+import { 
+  initializeCampaignScheduler, 
+  stopCampaignScheduler, 
+  triggerMessageExecution,
+  getScheduledMessageStatus,
+  validateScheduledMessage,
+  type ScheduledMessage 
+} from '../lib/campaign-scheduler';
 
 interface MessageSchedulerProps {
   onClose: () => void;
 }
 
-interface ScheduledMessage {
-  id?: string;
-  message: string;
-  recipients: string[];
-  sendAt: Date;
-  repeatType: 'none' | 'daily' | 'weekly' | 'monthly';
-  status: 'scheduled' | 'sent' | 'failed';
-}
-
 const MessageScheduler: React.FC<MessageSchedulerProps> = ({ onClose }) => {
   const { user } = useAuth();
-  const [scheduledMessage, setScheduledMessage] = useState<ScheduledMessage>({
+  const [scheduledMessage, setScheduledMessage] = useState<Partial<ScheduledMessage>>({
     message: '',
     recipients: [],
-    sendAt: new Date(),
-    repeatType: 'none',
+    send_at: new Date().toISOString(),
+    repeat_type: 'none',
     status: 'scheduled'
   });
   const [scheduledMessages, setScheduledMessages] = useState<ScheduledMessage[]>([]);
@@ -31,9 +29,19 @@ const MessageScheduler: React.FC<MessageSchedulerProps> = ({ onClose }) => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'create' | 'manage'>('create');
+  const [schedulerRunning, setSchedulerRunning] = useState(false);
+  const [testingMessage, setTestingMessage] = useState<string | null>(null);
 
   useEffect(() => {
     loadScheduledMessages();
+    
+    // Initialize scheduler
+    initializeCampaignScheduler();
+    setSchedulerRunning(true);
+    
+    return () => {
+      stopCampaignScheduler();
+    };
   }, []);
 
   const loadScheduledMessages = async () => {
@@ -49,9 +57,14 @@ const MessageScheduler: React.FC<MessageSchedulerProps> = ({ onClose }) => {
         id: msg.id,
         message: msg.message,
         recipients: msg.recipients,
-        sendAt: new Date(msg.send_at),
-        repeatType: msg.repeat_type,
-        status: msg.status
+        send_at: msg.send_at,
+        repeat_type: msg.repeat_type,
+        status: msg.status,
+        user_id: msg.user_id,
+        media: msg.media,
+        variables: msg.variables,
+        created_at: msg.created_at,
+        updated_at: msg.updated_at
       })) || [];
 
       setScheduledMessages(formattedMessages);
@@ -66,18 +79,16 @@ const MessageScheduler: React.FC<MessageSchedulerProps> = ({ onClose }) => {
       setLoading(true);
       setError(null);
 
-      if (!scheduledMessage.message.trim()) {
-        setError('Please enter a message');
-        return;
-      }
-
-      if (scheduledMessage.recipients.length === 0) {
-        setError('Please add recipients');
-        return;
-      }
-
-      if (scheduledMessage.sendAt <= new Date()) {
-        setError('Please select a future date and time');
+      // Validate scheduled message
+      const validation = validateScheduledMessage({
+        ...scheduledMessage,
+        recipients: typeof scheduledMessage.recipients === 'string'
+          ? scheduledMessage.recipients.split('\n').filter(r => r.trim())
+          : scheduledMessage.recipients
+      });
+      
+      if (!validation.isValid) {
+        setError(validation.errors.join(', '));
         return;
       }
 
@@ -85,10 +96,15 @@ const MessageScheduler: React.FC<MessageSchedulerProps> = ({ onClose }) => {
         .from('scheduled_messages')
         .insert([{
           message: scheduledMessage.message,
-          recipients: scheduledMessage.recipients,
-          send_at: scheduledMessage.sendAt.toISOString(),
-          repeat_type: scheduledMessage.repeatType,
-          status: 'scheduled'
+          recipients: typeof scheduledMessage.recipients === 'string'
+            ? scheduledMessage.recipients.split('\n').filter(r => r.trim())
+            : scheduledMessage.recipients,
+          send_at: scheduledMessage.send_at,
+          repeat_type: scheduledMessage.repeat_type,
+          status: 'scheduled',
+          user_id: user?.id,
+          media: scheduledMessage.media,
+          variables: scheduledMessage.variables
         }]);
 
       if (error) throw error;
@@ -97,8 +113,8 @@ const MessageScheduler: React.FC<MessageSchedulerProps> = ({ onClose }) => {
       setScheduledMessage({
         message: '',
         recipients: [],
-        sendAt: new Date(),
-        repeatType: 'none',
+        send_at: new Date().toISOString(),
+        repeat_type: 'none',
         status: 'scheduled'
       });
       
@@ -132,6 +148,36 @@ const MessageScheduler: React.FC<MessageSchedulerProps> = ({ onClose }) => {
     }
   };
 
+  const handleTestMessage = async (messageId: string) => {
+    try {
+      setTestingMessage(messageId);
+      setError(null);
+      
+      await triggerMessageExecution(messageId);
+      setSuccess('Message exécuté manuellement avec succès');
+      
+      // Reload messages to see updated status
+      await loadScheduledMessages();
+      
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (error) {
+      console.error('Error testing message:', error);
+      setError(`Erreur lors du test du message: ${error.message}`);
+    } finally {
+      setTestingMessage(null);
+    }
+  };
+
+  const toggleScheduler = () => {
+    if (schedulerRunning) {
+      stopCampaignScheduler();
+      setSchedulerRunning(false);
+    } else {
+      initializeCampaignScheduler();
+      setSchedulerRunning(true);
+    }
+  };
+
   const formatDateTime = (date: Date) => {
     return date.toLocaleString('fr-FR', {
       year: 'numeric',
@@ -147,12 +193,31 @@ const MessageScheduler: React.FC<MessageSchedulerProps> = ({ onClose }) => {
       <div className="bg-white rounded-xl shadow-lg max-w-4xl w-full max-h-[90vh] overflow-hidden">
         <div className="flex items-center justify-between p-6 border-b">
           <h2 className="text-xl font-semibold text-gray-900">Message Scheduler</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
-          >
-            <X className="w-6 h-6" />
-          </button>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <div className={`w-2 h-2 rounded-full ${schedulerRunning ? 'bg-green-500' : 'bg-red-500'}`} />
+              <span className="text-sm text-gray-600">
+                Scheduler {schedulerRunning ? 'Actif' : 'Arrêté'}
+              </span>
+              <button
+                onClick={toggleScheduler}
+                className={`p-2 rounded-lg ${
+                  schedulerRunning 
+                    ? 'text-red-600 hover:bg-red-50' 
+                    : 'text-green-600 hover:bg-green-50'
+                }`}
+                title={schedulerRunning ? 'Arrêter le scheduler' : 'Démarrer le scheduler'}
+              >
+                {schedulerRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+              </button>
+            </div>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
         </div>
 
         <div className="border-b border-gray-200">
@@ -217,11 +282,10 @@ const MessageScheduler: React.FC<MessageSchedulerProps> = ({ onClose }) => {
                   Recipients (one per line)
                 </label>
                 <textarea
-                  value={scheduledMessage.recipients.join('\n')}
-                  onChange={(e) => setScheduledMessage(prev => ({ 
-                    ...prev, 
-                    recipients: e.target.value.split('\n').filter(r => r.trim()) 
-                  }))}
+                  value={Array.isArray(scheduledMessage.recipients) 
+                    ? scheduledMessage.recipients.join('\n')
+                    : scheduledMessage.recipients}
+                  onChange={(e) => setScheduledMessage(prev => ({ ...prev, recipients: e.target.value }))}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   rows={4}
                   placeholder="+221123456789&#10;+221987654321"
@@ -235,12 +299,13 @@ const MessageScheduler: React.FC<MessageSchedulerProps> = ({ onClose }) => {
                   </label>
                   <input
                     type="date"
-                    value={scheduledMessage.sendAt.toISOString().split('T')[0]}
+                    value={scheduledMessage.send_at ? new Date(scheduledMessage.send_at).toISOString().split('T')[0] : ''}
                     onChange={(e) => {
                       const newDate = new Date(e.target.value);
-                      newDate.setHours(scheduledMessage.sendAt.getHours());
-                      newDate.setMinutes(scheduledMessage.sendAt.getMinutes());
-                      setScheduledMessage(prev => ({ ...prev, sendAt: newDate }));
+                      const currentTime = scheduledMessage.send_at ? new Date(scheduledMessage.send_at) : new Date();
+                      newDate.setHours(currentTime.getHours());
+                      newDate.setMinutes(currentTime.getMinutes());
+                      setScheduledMessage(prev => ({ ...prev, send_at: newDate.toISOString() }));
                     }}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
@@ -252,13 +317,15 @@ const MessageScheduler: React.FC<MessageSchedulerProps> = ({ onClose }) => {
                   </label>
                   <input
                     type="time"
-                    value={`${scheduledMessage.sendAt.getHours().toString().padStart(2, '0')}:${scheduledMessage.sendAt.getMinutes().toString().padStart(2, '0')}`}
+                    value={scheduledMessage.send_at ? 
+                      `${new Date(scheduledMessage.send_at).getHours().toString().padStart(2, '0')}:${new Date(scheduledMessage.send_at).getMinutes().toString().padStart(2, '0')}` 
+                      : ''}
                     onChange={(e) => {
                       const [hours, minutes] = e.target.value.split(':').map(Number);
-                      const newDate = new Date(scheduledMessage.sendAt);
+                      const newDate = scheduledMessage.send_at ? new Date(scheduledMessage.send_at) : new Date();
                       newDate.setHours(hours);
                       newDate.setMinutes(minutes);
-                      setScheduledMessage(prev => ({ ...prev, sendAt: newDate }));
+                      setScheduledMessage(prev => ({ ...prev, send_at: newDate.toISOString() }));
                     }}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
@@ -270,10 +337,10 @@ const MessageScheduler: React.FC<MessageSchedulerProps> = ({ onClose }) => {
                   Repeat
                 </label>
                 <select
-                  value={scheduledMessage.repeatType}
+                  value={scheduledMessage.repeat_type}
                   onChange={(e) => setScheduledMessage(prev => ({ 
                     ...prev, 
-                    repeatType: e.target.value as typeof scheduledMessage.repeatType 
+                    repeat_type: e.target.value as typeof scheduledMessage.repeat_type 
                   }))}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
@@ -286,7 +353,8 @@ const MessageScheduler: React.FC<MessageSchedulerProps> = ({ onClose }) => {
 
               <button
                 onClick={handleSchedule}
-                disabled={loading || !scheduledMessage.message.trim() || scheduledMessage.recipients.length === 0}
+                disabled={loading || !scheduledMessage.message?.trim() || !scheduledMessage.recipients || 
+                  (Array.isArray(scheduledMessage.recipients) ? scheduledMessage.recipients.length === 0 : !scheduledMessage.recipients.trim())}
                 className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? (
@@ -323,17 +391,29 @@ const MessageScheduler: React.FC<MessageSchedulerProps> = ({ onClose }) => {
                         }`}>
                           {msg.status}
                         </span>
-                        {msg.repeatType !== 'none' && (
+                        {msg.repeat_type !== 'none' && (
                           <span className="px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-800">
                             <Repeat className="w-3 h-3 inline mr-1" />
-                            {msg.repeatType}
+                            {msg.repeat_type}
                           </span>
                         )}
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-sm text-gray-500">
-                          {formatDateTime(msg.sendAt)}
+                          {formatDateTime(new Date(msg.send_at))}
                         </span>
+                        <button
+                          onClick={() => handleTestMessage(msg.id!)}
+                          disabled={testingMessage === msg.id}
+                          className="p-1 text-purple-600 hover:bg-purple-50 rounded"
+                          title="Tester ce message"
+                        >
+                          {testingMessage === msg.id ? (
+                            <RefreshCw className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Play className="w-3 h-3" />
+                          )}
+                        </button>
                         <button
                           onClick={() => handleDeleteScheduled(msg.id!)}
                           className="text-red-600 hover:text-red-800"

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MessageSquare, Send, Upload, Download, RefreshCw, AlertCircle, CheckCircle, Users, BarChart2, Settings, Calendar, Target, Zap, Filter, Plus, Eye, Edit, Trash2 } from 'lucide-react';
+import { MessageSquare, Send, Upload, Download, RefreshCw, AlertCircle, CheckCircle, Users, BarChart2, Settings, Calendar, Target, Zap, Filter, Plus, Eye, Edit, Trash2, X } from 'lucide-react';
 import { sendWhatsAppMessages, checkWhatsAppConnection, getWhatsAppTemplates, MessageResult, MessageVariable, parseMessageVariables, replaceMessageVariables } from '../lib/whatsapp';
 import { useAuth } from '../contexts/AuthContext';
 import BackButton from '../components/BackButton';
@@ -10,6 +10,7 @@ import WhatsAppTemplateSelector from '../components/WhatsAppTemplateSelector';
 import MessageScheduler from '../components/MessageScheduler';
 import WhatsAppAnalytics from '../components/WhatsAppAnalytics';
 import CampaignManager from '../components/CampaignManager';
+import CampaignTestingPanel from '../components/CampaignTestingPanel';
 import { supabase } from '../lib/supabase';
 
 interface Contact {
@@ -43,6 +44,7 @@ const WhatsApp = () => {
   const [showScheduler, setShowScheduler] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [showCampaignManager, setShowCampaignManager] = useState(false);
+  const [showTestingPanel, setShowTestingPanel] = useState(false);
   const [activeTab, setActiveTab] = useState<'send' | 'templates' | 'campaigns' | 'analytics'>('send');
   const [templates, setTemplates] = useState<any[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
@@ -51,6 +53,23 @@ const WhatsApp = () => {
   useEffect(() => {
     checkConnection();
     loadTemplates();
+    
+    // Set up real-time subscription for campaign metrics updates
+    const campaignSubscription = supabase
+      .channel('campaign_metrics_updates')
+      .on('postgres_changes', { 
+        event: 'UPDATE', 
+        schema: 'public', 
+        table: 'campaigns' 
+      }, (payload) => {
+        console.log('📊 [WHATSAPP] Campaign metrics updated:', payload);
+        // Trigger a refresh of any displayed campaign data
+      })
+      .subscribe();
+
+    return () => {
+      campaignSubscription.unsubscribe();
+    };
   }, []);
 
   const checkConnection = async () => {
@@ -414,19 +433,6 @@ const WhatsApp = () => {
       case 'campaigns':
         return (
           <div className="space-y-6">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">Gestion des Campagnes</h3>
-                <p className="text-sm text-gray-500">Créez et gérez vos campagnes marketing WhatsApp</p>
-              </div>
-              <button
-                onClick={() => setShowCampaignManager(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-              >
-                <Plus className="w-4 h-4" />
-                Nouvelle Campagne
-              </button>
-            </div>
             <CampaignManager />
           </div>
         );
@@ -445,6 +451,13 @@ const WhatsApp = () => {
               >
                 <BarChart2 className="w-4 h-4" />
                 Voir les analyses détaillées
+              </button>
+              <button
+                onClick={() => setShowTestingPanel(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+              >
+                <Settings className="w-4 h-4" />
+                Test Campaigns
               </button>
             </div>
 
@@ -623,6 +636,25 @@ const WhatsApp = () => {
         <WhatsAppAnalytics
           onClose={() => setShowAnalytics(false)}
         />
+      )}
+
+      {showTestingPanel && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-lg w-full max-w-6xl max-h-[90vh] overflow-hidden">
+            <div className="flex items-center justify-between p-6 border-b">
+              <h2 className="text-xl font-semibold text-gray-900">Campaign Testing Panel</h2>
+              <button
+                onClick={() => setShowTestingPanel(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="overflow-y-auto max-h-[calc(90vh-80px)]">
+              <CampaignTestingPanel onClose={() => setShowTestingPanel(false)} />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

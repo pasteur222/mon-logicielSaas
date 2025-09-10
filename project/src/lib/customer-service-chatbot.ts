@@ -19,13 +19,22 @@ export async function processCustomerServiceMessage(message: CustomerServiceMess
   const startTime = Date.now();
   
   try {
-    console.log('🎧 [CUSTOMER-SERVICE] Processing message:', {
+    console.log('🎧 [CUSTOMER-SERVICE] Processing message from', message.source, ':', {
       hasText: !!message.content,
       source: message.source,
       phoneNumber: message.phoneNumber,
       webUserId: message.webUserId,
       contentLength: message.content?.length || 0
     });
+
+    // Validate input message
+    if (!message.content || message.content.trim().length === 0) {
+      throw new Error('Empty message content');
+    }
+
+    if (message.content.length > 4000) {
+      throw new Error('Message too long (max 4000 characters)');
+    }
 
     // Ensure conversation synchronization first
     if (message.phoneNumber) {
@@ -85,22 +94,31 @@ export async function processCustomerServiceMessage(message: CustomerServiceMess
       messages: [
         {
           role: "system",
-          content: `Vous êtes un assistant de service client pour une entreprise de télécommunications.
+          content: `Vous êtes un assistant de service client professionnel pour Airtel GPT.
           Votre objectif est d'aider les clients avec leurs demandes, problèmes et questions.
           Soyez professionnel, courtois et orienté solution.
           Fournissez des instructions claires et demandez des clarifications si nécessaire.
           Si vous ne pouvez pas résoudre un problème, proposez de l'escalader vers un agent humain.
+          Répondez toujours en français sauf si le client écrit dans une autre langue.
+          Gardez vos réponses concises mais complètes (maximum 500 mots).
           ${message.source === 'web' ? 'L\'utilisateur vous contacte via votre site web.' : 'L\'utilisateur vous contacte via WhatsApp.'}`
         },
         { role: "user", content: message.content }
       ],
       model: 'llama3-70b-8192',
       temperature: 0.7,
-      max_tokens: 2048,
+      max_tokens: 1500,
     });
 
     const response = completion.choices[0]?.message?.content || 
       "Je suis désolé, je n'ai pas pu générer une réponse appropriée. Un agent vous contactera bientôt.";
+
+    // Validate and potentially truncate response
+    let finalResponse = response;
+    if (response.length > 4000) {
+      console.warn('🎧 [CUSTOMER-SERVICE] Response too long, truncating');
+      finalResponse = response.substring(0, 3997) + '...';
+    }
 
     // Calculate response time
     const responseTime = (Date.now() - startTime) / 1000;
@@ -111,7 +129,7 @@ export async function processCustomerServiceMessage(message: CustomerServiceMess
       webUserId: message.webUserId,
       sessionId: message.sessionId,
       source: message.source,
-      content: response,
+      content: finalResponse,
       sender: 'bot'
     };
 
@@ -120,7 +138,7 @@ export async function processCustomerServiceMessage(message: CustomerServiceMess
       web_user_id: botMessage.webUserId,
       session_id: botMessage.sessionId,
       source: botMessage.source,
-      content: botMessage.content,
+      content: finalResponse,
       sender: botMessage.sender,
       intent: 'client',
       response_time: responseTime
@@ -139,11 +157,17 @@ export async function processCustomerServiceMessage(message: CustomerServiceMess
     return botMessage;
 
   } catch (error) {
-    console.error('❌ [CUSTOMER-SERVICE] Error processing message:', error);
+    console.error('❌ [CUSTOMER-SERVICE] Error processing message:', {
+      error: error.message,
+      source: message.source,
+      phoneNumber: message.phoneNumber,
+      webUserId: message.webUserId,
+      contentLength: message.content?.length || 0
+    });
     
     // Save error message to ensure user gets feedback
     const errorResponse = message.source === 'web' 
-      ? "Désolé, je rencontre des difficultés techniques. Veuillez actualiser la page et réessayer."
+      ? "Désolé, je rencontre des difficultés techniques. Veuillez actualiser la page et réessayer. Si le problème persiste, contactez notre support."
       : "Désolé, je rencontre des difficultés techniques. Un agent vous contactera bientôt.";
 
     try {
@@ -157,7 +181,7 @@ export async function processCustomerServiceMessage(message: CustomerServiceMess
         intent: 'client'
       });
     } catch (saveError) {
-      console.error('Failed to save error response:', saveError);
+      console.error('❌ [CUSTOMER-SERVICE] Failed to save error response:', saveError);
     }
 
     return {

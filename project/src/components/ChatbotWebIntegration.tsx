@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Code, Copy, CheckCircle, AlertCircle, Globe, Settings, Palette, MessageSquare, X, Save, RefreshCw, Download, Eye } from 'lucide-react';
+import { Code, Copy, CheckCircle, AlertCircle, Globe, Settings, Palette, MessageSquare, X, Save, RefreshCw, Download, Eye, Shield, ExternalLink, Monitor } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -33,6 +33,8 @@ const ChatbotWebIntegration: React.FC<ChatbotWebIntegrationProps> = ({ onClose }
   const [success, setSuccess] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<'setup' | 'customize' | 'preview'>('setup');
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<'unknown' | 'success' | 'error'>('unknown');
 
   useEffect(() => {
     if (user) {
@@ -115,9 +117,51 @@ const ChatbotWebIntegration: React.FC<ChatbotWebIntegrationProps> = ({ onClose }
     }
   };
 
+  const testChatbotConnection = async () => {
+    try {
+      setTestingConnection(true);
+      setError(null);
+
+      // Test the chatbot API endpoint
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/api-chatbot`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          webUserId: 'test_user_' + Date.now(),
+          sessionId: 'test_session_' + Date.now(),
+          source: 'web',
+          text: 'Test connection',
+          chatbotType: 'client'
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`API test failed: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      
+      if (data.success) {
+        setConnectionStatus('success');
+        setSuccess('Connexion au chatbot testée avec succès');
+      } else {
+        throw new Error(data.error || 'API test failed');
+      }
+    } catch (err) {
+      console.error('Error testing chatbot connection:', err);
+      setConnectionStatus('error');
+      setError(`Test de connexion échoué: ${err.message}`);
+    } finally {
+      setTestingConnection(false);
+    }
+  };
+
   const generateEmbedCode = () => {
     const baseUrl = window.location.origin;
-    return `<!-- Airtel GPT Chatbot Widget -->
+    const embedCode = `<!-- Airtel GPT Chatbot Widget -->
 <script 
   src="${baseUrl}/chatbot-widget.js"
   data-user-id="${user?.id}"
@@ -126,9 +170,12 @@ const ChatbotWebIntegration: React.FC<ChatbotWebIntegrationProps> = ({ onClose }
   data-position="${config.widget_position}"
   data-api-url="${import.meta.env.VITE_SUPABASE_URL}/functions/v1/api-chatbot"
   data-api-key="${import.meta.env.VITE_SUPABASE_ANON_KEY}"
+  data-max-retries="3"
   async>
 </script>
 <!-- End Airtel GPT Chatbot Widget -->`;
+    
+    return embedCode;
   };
 
   const copyToClipboard = () => {
@@ -294,13 +341,53 @@ const ChatbotWebIntegration: React.FC<ChatbotWebIntegrationProps> = ({ onClose }
                   <p>✅ Réponses automatiques 24/7</p>
                   <p>✅ Interface moderne et responsive</p>
                   <p>✅ Historique des conversations</p>
+                  <p>✅ Gestion des erreurs et reconnexion automatique</p>
                 </div>
                 <div className="space-y-2">
                   <p>✅ Compatible tous navigateurs</p>
                   <p>✅ Optimisé mobile et desktop</p>
                   <p>✅ Intégration en 2 minutes</p>
+                  <p>✅ Sécurisé et conforme RGPD</p>
                 </div>
               </div>
+            </div>
+
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-medium text-gray-900">Test de Connexion</h3>
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${
+                    connectionStatus === 'success' ? 'bg-green-500' :
+                    connectionStatus === 'error' ? 'bg-red-500' : 'bg-gray-400'
+                  }`} />
+                  <span className="text-sm text-gray-600">
+                    {connectionStatus === 'success' ? 'Connecté' :
+                     connectionStatus === 'error' ? 'Erreur' : 'Non testé'}
+                  </span>
+                </div>
+              </div>
+              
+              <button
+                onClick={testChatbotConnection}
+                disabled={testingConnection}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {testingConnection ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Test en cours...
+                  </>
+                ) : (
+                  <>
+                    <Monitor className="w-4 h-4" />
+                    Tester la connexion
+                  </>
+                )}
+              </button>
+              
+              <p className="text-sm text-gray-500 mt-2">
+                Testez la connexion au chatbot avant de l'intégrer sur votre site
+              </p>
             </div>
 
             <div>
@@ -344,19 +431,62 @@ const ChatbotWebIntegration: React.FC<ChatbotWebIntegrationProps> = ({ onClose }
               <h4 className="font-medium text-green-800 mb-2">Instructions d'installation</h4>
               <ol className="text-green-700 text-sm space-y-2 list-decimal list-inside">
                 <li>Copiez le code d'intégration ci-dessus</li>
-                <li>Ouvrez l'éditeur de votre site web (WordPress, HTML, etc.)</li>
-                <li>Collez le code dans la section &lt;head&gt; de votre page</li>
+                <li>Ouvrez l'éditeur de votre site web</li>
+                <li>Collez le code juste avant la balise &lt;/body&gt; de votre page</li>
                 <li>Sauvegardez et publiez votre site</li>
                 <li>Le chatbot apparaîtra automatiquement en bas à droite</li>
               </ol>
             </div>
 
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-              <h4 className="font-medium text-amber-800 mb-2">Compatibilité</h4>
-              <p className="text-amber-700 text-sm">
-                Compatible avec WordPress, Shopify, Wix, Squarespace, et tous les sites HTML. 
-                Fonctionne sur tous les navigateurs modernes et appareils mobiles.
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                <h4 className="font-medium text-amber-800 mb-2 flex items-center gap-2">
+                  <Globe className="w-4 h-4" />
+                  Compatibilité
+                </h4>
+                <div className="text-amber-700 text-sm space-y-1">
+                  <p>✅ WordPress, Shopify, Wix, Squarespace</p>
+                  <p>✅ Sites HTML statiques</p>
+                  <p>✅ Tous navigateurs modernes</p>
+                  <p>✅ Appareils mobiles et desktop</p>
+                </div>
+              </div>
+              
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h4 className="font-medium text-blue-800 mb-2 flex items-center gap-2">
+                  <Shield className="w-4 h-4" />
+                  Sécurité
+                </h4>
+                <div className="text-blue-700 text-sm space-y-1">
+                  <p>✅ Chiffrement des communications</p>
+                  <p>✅ Isolation Shadow DOM</p>
+                  <p>✅ Protection XSS intégrée</p>
+                  <p>✅ Conforme RGPD</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <h4 className="font-medium text-red-800 mb-2">Important pour la Production</h4>
+              <div className="text-red-700 text-sm space-y-2">
+                <p>• Testez toujours le chatbot sur un environnement de test avant la production</p>
+                <p>• Vérifiez que votre configuration Groq API est active</p>
+                <p>• Le chatbot nécessite une connexion internet pour fonctionner</p>
+                <p>• Les conversations sont sauvegardées dans votre base de données</p>
+              </div>
+            </div>
+
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+              <h4 className="font-medium text-gray-800 mb-2">Support Technique</h4>
+              <p className="text-gray-700 text-sm mb-3">
+                Si vous rencontrez des problèmes d'intégration, voici les étapes de dépannage :
               </p>
+              <ol className="text-gray-700 text-sm space-y-1 list-decimal list-inside">
+                <li>Vérifiez que le script est placé avant &lt;/body&gt;</li>
+                <li>Ouvrez la console développeur (F12) pour voir les erreurs</li>
+                <li>Testez la connexion avec le bouton ci-dessus</li>
+                <li>Contactez le support si le problème persiste</li>
+              </ol>
             </div>
           </div>
         )}
@@ -377,6 +507,7 @@ const ChatbotWebIntegration: React.FC<ChatbotWebIntegrationProps> = ({ onClose }
                     onChange={(e) => setConfig(prev => ({ ...prev, widget_title: e.target.value }))}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
                     placeholder="Service Client"
+                    maxLength={50}
                   />
                   <p className="text-sm text-gray-500 mt-1">
                     Ce titre apparaîtra en haut de la fenêtre de chat
@@ -400,6 +531,7 @@ const ChatbotWebIntegration: React.FC<ChatbotWebIntegrationProps> = ({ onClose }
                       onChange={(e) => setConfig(prev => ({ ...prev, widget_color: e.target.value }))}
                       className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
                       placeholder="#E60012"
+                      pattern="^#[0-9A-Fa-f]{6}$"
                     />
                   </div>
                   <p className="text-sm text-gray-500 mt-1">
@@ -469,6 +601,16 @@ const ChatbotWebIntegration: React.FC<ChatbotWebIntegrationProps> = ({ onClose }
                 </div>
               </div>
             </div>
+
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <h4 className="font-medium text-yellow-800 mb-2">Optimisation des Performances</h4>
+              <div className="text-yellow-700 text-sm space-y-2">
+                <p>• Le widget se charge de manière asynchrone pour ne pas ralentir votre site</p>
+                <p>• Les conversations sont mises en cache localement pour une meilleure réactivité</p>
+                <p>• Le widget s'adapte automatiquement à la taille de l'écran</p>
+                <p>• Optimisé pour les Core Web Vitals de Google</p>
+              </div>
+            </div>
           </div>
         )}
 
@@ -500,27 +642,37 @@ const ChatbotWebIntegration: React.FC<ChatbotWebIntegrationProps> = ({ onClose }
                   </li>
                   <li className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4" />
-                    Support des émojis
+                    Gestion des erreurs robuste
                   </li>
                 </ul>
                 <ul className="text-green-700 text-sm space-y-2">
                   <li className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4" />
-                    Indicateurs de frappe
+                    Reconnexion automatique
                   </li>
                   <li className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4" />
-                    Mode hors ligne
+                    File d'attente des messages
                   </li>
                   <li className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4" />
-                    Optimisé mobile
+                    Indicateurs de statut
                   </li>
                   <li className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4" />
-                    Sécurisé et fiable
+                    Analytics intégrées
                   </li>
                 </ul>
+              </div>
+            </div>
+
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+              <h4 className="font-medium text-purple-800 mb-2">API et Intégrations</h4>
+              <div className="text-purple-700 text-sm space-y-2">
+                <p><strong>Endpoint API:</strong> {import.meta.env.VITE_SUPABASE_URL}/functions/v1/api-chatbot</p>
+                <p><strong>Méthode:</strong> POST</p>
+                <p><strong>Authentification:</strong> Bearer Token</p>
+                <p><strong>Format:</strong> JSON</p>
               </div>
             </div>
           </div>
@@ -530,9 +682,21 @@ const ChatbotWebIntegration: React.FC<ChatbotWebIntegrationProps> = ({ onClose }
       <div className="border-t border-gray-200 p-6 bg-gray-50">
         <div className="flex items-center justify-between">
           <div className="text-sm text-gray-600">
-            <p>💡 <strong>Astuce :</strong> Le chatbot utilise la même IA que votre service client WhatsApp</p>
+            <div className="space-y-1">
+              <p>💡 <strong>Astuce :</strong> Le chatbot utilise la même IA que votre service client WhatsApp</p>
+              <p>🔧 <strong>Support :</strong> Consultez la documentation ou contactez notre équipe</p>
+            </div>
           </div>
           <div className="flex gap-3">
+            <a
+              href="https://docs.airtelgpt.com/chatbot-integration"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+            >
+              <ExternalLink className="w-4 h-4" />
+              Documentation
+            </a>
             {onClose && (
               <button
                 onClick={onClose}

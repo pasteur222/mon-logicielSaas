@@ -16,8 +16,10 @@
     position: script?.dataset.position || 'right',
     apiUrl: script?.dataset.apiUrl || 'https://tyeysspawsupdgaowrec.supabase.co/functions/v1/api-chatbot',
     apiKey: script?.dataset.apiKey || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5ZXlzc3Bhd3N1cGRnYW93cmVjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQzNjg4NDIsImV4cCI6MjA1OTk0NDg0Mn0.DcV5OORxfNrQ6EdyimMOyT_SyDH0gC1RcRWH2E-JqhA',
-    maxRetries: 3,
-    retryDelay: 1000
+    maxRetries: parseInt(script?.dataset.maxRetries) || 3,
+    retryDelay: parseInt(script?.dataset.retryDelay) || 1000,
+    enableAnalytics: script?.dataset.enableAnalytics !== 'false',
+    enableOfflineMode: script?.dataset.enableOfflineMode !== 'false'
   };
 
   // Session management
@@ -105,11 +107,13 @@
     setupNetworkListeners() {
       window.addEventListener('online', () => {
         this.isOnline = true;
+        console.log('🌐 [CHATBOT] Network connection restored');
         this.processMessageQueue();
       });
 
       window.addEventListener('offline', () => {
         this.isOnline = false;
+        console.log('🌐 [CHATBOT] Network connection lost');
       });
     }
 
@@ -123,6 +127,7 @@
     async processMessageQueue() {
       if (!this.isOnline || this.messageQueue.length === 0) return;
 
+      console.log(`📤 [CHATBOT] Processing ${this.messageQueue.length} queued messages`);
       const queuedMessages = [...this.messageQueue];
       this.messageQueue = [];
 
@@ -130,7 +135,10 @@
         try {
           // Only process messages that are less than 5 minutes old
           if (Date.now() - item.timestamp < 5 * 60 * 1000) {
+            console.log('📤 [CHATBOT] Processing queued message:', item.message.substring(0, 50));
             await this.sendMessage(item.message, true);
+          } else {
+            console.log('⏰ [CHATBOT] Skipping old queued message');
           }
         } catch (error) {
           console.error('Error processing queued message:', error);
@@ -404,6 +412,17 @@
           font-size: 12px;
         }
 
+        .airtel-chatbot-timestamp {
+          font-size: 10px;
+          color: rgba(255, 255, 255, 0.7);
+          margin-top: 4px;
+          text-align: right;
+        }
+
+        .airtel-chatbot-message.bot .airtel-chatbot-timestamp {
+          color: rgba(0, 0, 0, 0.5);
+        }
+
         .airtel-chatbot-input-container {
           padding: 16px;
           border-top: 1px solid #e5e7eb;
@@ -648,8 +667,17 @@
       // Global error handler for the widget
       window.addEventListener('error', (event) => {
         if (event.filename && event.filename.includes('chatbot-widget')) {
-          console.error('Chatbot widget error:', event.error);
+          console.error('🚨 [CHATBOT] Widget error:', event.error);
           this.showSystemMessage('Une erreur technique est survenue. Veuillez actualiser la page.');
+        }
+      });
+
+      // Handle unhandled promise rejections
+      window.addEventListener('unhandledrejection', (event) => {
+        if (event.reason && event.reason.message && event.reason.message.includes('chatbot')) {
+          console.error('🚨 [CHATBOT] Unhandled promise rejection:', event.reason);
+          this.showSystemMessage('Erreur de connexion détectée. Reconnexion en cours...');
+          event.preventDefault();
         }
       });
 
@@ -716,7 +744,9 @@
       } else {
         if (statusElement) statusElement.textContent = 'Hors ligne';
         if (toggleButton) toggleButton.classList.add('offline');
-        this.showSystemMessage('Connexion perdue. Vos messages seront envoyés dès le retour de la connexion.');
+        if (config.enableOfflineMode) {
+          this.showSystemMessage('Mode hors ligne activé. Vos messages seront envoyés dès le retour de la connexion.');
+        }
       }
     }
 
@@ -855,19 +885,26 @@
     }
 
     async callChatbotAPI(message) {
+      console.log('🤖 [CHATBOT] Calling API with message:', message.substring(0, 50));
+      
       const payload = {
         webUserId: this.session.webUserId,
         sessionId: this.session.sessionId,
         source: 'web',
         text: message,
         chatbotType: 'client',
-        userAgent: navigator.userAgent
+        userAgent: navigator.userAgent,
+        timestamp: new Date().toISOString()
       };
+
+      console.log('🤖 [CHATBOT] API payload:', JSON.stringify(payload, null, 2));
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
       try {
+        console.log('🤖 [CHATBOT] Sending request to:', config.apiUrl);
+        
         const response = await fetch(config.apiUrl, {
           method: 'POST',
           headers: {
@@ -880,20 +917,26 @@
 
         clearTimeout(timeoutId);
 
+        console.log('🤖 [CHATBOT] API response status:', response.status);
+
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
+          console.error('🤖 [CHATBOT] API error response:', errorData);
           throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
         }
 
         const data = await response.json();
+        console.log('🤖 [CHATBOT] API response data:', data);
         
         if (!data.success) {
           throw new Error(data.error || 'API returned unsuccessful response');
         }
 
+        console.log('✅ [CHATBOT] API call successful');
         return data.response || 'Réponse non disponible';
       } catch (error) {
         clearTimeout(timeoutId);
+        console.error('❌ [CHATBOT] API call failed:', error);
         
         if (error.name === 'AbortError') {
           throw new Error('Délai d\'attente dépassé. Veuillez réessayer.');
@@ -904,12 +947,18 @@
     }
 
     getErrorMessage(error) {
+      console.log('🚨 [CHATBOT] Processing error:', error.message);
+      
       if (error.message.includes('429')) {
         return 'Service temporairement surchargé. Veuillez patienter quelques instants.';
       } else if (error.message.includes('timeout') || error.message.includes('Délai')) {
         return 'Délai d\'attente dépassé. Vérifiez votre connexion internet.';
       } else if (error.message.includes('network') || error.message.includes('fetch')) {
         return 'Problème de connexion. Vérifiez votre connexion internet.';
+      } else if (error.message.includes('401') || error.message.includes('403')) {
+        return 'Erreur d\'authentification. Contactez l\'administrateur.';
+      } else if (error.message.includes('500')) {
+        return 'Erreur serveur temporaire. Veuillez réessayer dans quelques minutes.';
       } else {
         return 'Désolé, je rencontre des difficultés techniques. Un agent vous contactera bientôt.';
       }
@@ -921,6 +970,7 @@
       const messagesContainer = this.shadowRoot?.querySelector('#airtel-chatbot-messages');
       if (!messagesContainer) return;
 
+      console.log(`💬 [CHATBOT] Displaying ${sender} message:`, message.substring(0, 50));
       const messageElement = document.createElement('div');
       messageElement.className = `airtel-chatbot-message ${sender}`;
       
@@ -935,9 +985,46 @@
         .replace(/\*(.*?)\*/g, '<em>$1</em>');
 
       messageElement.innerHTML = formattedMessage;
+      
+      // Add timestamp
+      const timestamp = document.createElement('div');
+      timestamp.className = 'airtel-chatbot-timestamp';
+      timestamp.textContent = new Date().toLocaleTimeString();
+      messageElement.appendChild(timestamp);
+      
       messagesContainer.appendChild(messageElement);
       
       this.scrollToBottom();
+      
+      // Track analytics if enabled
+      if (config.enableAnalytics && sender === 'bot') {
+        this.trackMessageAnalytics(message);
+      }
+    }
+
+    trackMessageAnalytics(message) {
+      try {
+        // Simple analytics tracking
+        const analytics = {
+          sessionId: this.session?.sessionId,
+          messageLength: message.length,
+          timestamp: new Date().toISOString(),
+          userAgent: navigator.userAgent
+        };
+        
+        // Store in localStorage for later analysis
+        const existingAnalytics = JSON.parse(localStorage.getItem('airtel-chatbot-analytics') || '[]');
+        existingAnalytics.push(analytics);
+        
+        // Keep only last 100 entries
+        if (existingAnalytics.length > 100) {
+          existingAnalytics.splice(0, existingAnalytics.length - 100);
+        }
+        
+        localStorage.setItem('airtel-chatbot-analytics', JSON.stringify(existingAnalytics));
+      } catch (error) {
+        console.warn('Analytics tracking failed:', error);
+      }
     }
 
     showSystemMessage(message) {
@@ -1012,7 +1099,24 @@
 
     markMessagesAsRead() {
       // This could be extended to mark messages as read on the server
-      console.log('Messages marked as read for session:', this.session?.sessionId);
+      console.log('📖 [CHATBOT] Messages marked as read for session:', this.session?.sessionId);
+      
+      // Track read analytics
+      if (config.enableAnalytics) {
+        try {
+          const readEvent = {
+            type: 'messages_read',
+            sessionId: this.session?.sessionId,
+            timestamp: new Date().toISOString()
+          };
+          
+          const events = JSON.parse(localStorage.getItem('airtel-chatbot-events') || '[]');
+          events.push(readEvent);
+          localStorage.setItem('airtel-chatbot-events', JSON.stringify(events.slice(-50)));
+        } catch (error) {
+          console.warn('Read tracking failed:', error);
+        }
+      }
     }
 
     setLoading(loading) {
@@ -1063,9 +1167,27 @@
     try {
       // Check if widget already exists to prevent duplicates
       if (window.airtelChatbotInstance && !window.airtelChatbotInstance.isDestroyed) {
-        console.log('Airtel GPT Chatbot Widget already initialized');
+        console.log('🤖 [CHATBOT] Widget already initialized, skipping');
         return;
       }
+
+      // Validate configuration
+      if (!config.userId) {
+        console.error('🚨 [CHATBOT] Missing required userId configuration');
+        return;
+      }
+
+      if (!config.apiUrl) {
+        console.error('🚨 [CHATBOT] Missing required apiUrl configuration');
+        return;
+      }
+
+      console.log('🚀 [CHATBOT] Initializing widget with config:', {
+        userId: config.userId,
+        apiUrl: config.apiUrl,
+        color: config.color,
+        position: config.position
+      });
 
       const widget = new ChatbotWidget();
       window.airtelChatbotInstance = widget;
@@ -1087,11 +1209,25 @@
           sessionId: widget.session?.sessionId,
           isOnline: widget.session?.isOnline
         })
+        getAnalytics: () => {
+          try {
+            return {
+              messages: JSON.parse(localStorage.getItem('airtel-chatbot-analytics') || '[]'),
+              events: JSON.parse(localStorage.getItem('airtel-chatbot-events') || '[]')
+            };
+          } catch (error) {
+            return { messages: [], events: [] };
+          }
+        },
+        clearAnalytics: () => {
+          localStorage.removeItem('airtel-chatbot-analytics');
+          localStorage.removeItem('airtel-chatbot-events');
+        }
       };
 
-      console.log('Airtel GPT Chatbot Widget initialized successfully');
+      console.log('✅ [CHATBOT] Widget initialized successfully');
     } catch (error) {
-      console.error('Failed to initialize Airtel GPT Chatbot Widget:', error);
+      console.error('❌ [CHATBOT] Failed to initialize widget:', error);
     }
   }
 
