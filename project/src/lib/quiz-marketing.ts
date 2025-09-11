@@ -45,7 +45,15 @@ export interface QuizStats {
   profileBreakdown: { discovery: number; active: number; vip: number };
   averageScore: number;
   completionRate: number;
-  latestParticipants: QuizUser[];
+  accuracyRate: number;
+  averageTimePerQuestion: number;
+  dropOffRate: number;
+  countryDistribution: Record<string, number>;
+  engagementMetrics: {
+    averageSessionDuration: number;
+    questionsPerSession: number;
+    returnRate: number;
+  };
 }
 
 export function getQuestionTypeLabel(type: string): string {
@@ -56,6 +64,8 @@ export function getQuestionTypeLabel(type: string): string {
       return 'Préférence';
     case 'quiz':
       return 'Quiz';
+    case 'product_test':
+      return 'Test Produit';
     default:
       return 'Inconnu';
   }
@@ -63,34 +73,9 @@ export function getQuestionTypeLabel(type: string): string {
 
 export async function getQuizStats(): Promise<QuizStats> {
   try {
-    const { data: users, error } = await supabase
-      .from('quiz_users')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-
-    const totalParticipants = users?.length || 0;
-    const profileBreakdown = {
-      discovery: users?.filter(u => u.profile === 'discovery').length || 0,
-      active: users?.filter(u => u.profile === 'active').length || 0,
-      vip: users?.filter(u => u.profile === 'vip').length || 0
-    };
-
-    const averageScore = totalParticipants > 0
-      ? users!.reduce((sum, user) => sum + user.score, 0) / totalParticipants
-      : 0;
-
-    const completedUsers = users?.filter(u => u.status === 'completed').length || 0;
-    const completionRate = totalParticipants > 0 ? (completedUsers / totalParticipants) * 100 : 0;
-
-    return {
-      totalParticipants,
-      profileBreakdown,
-      averageScore,
-      completionRate,
-      latestParticipants: users?.slice(0, 10) || []
-    };
+    // Import the enhanced statistics function
+    const { getEnhancedQuizStatistics } = await import('./quiz-enhanced');
+    return await getEnhancedQuizStatistics();
   } catch (error) {
     console.error('Error getting quiz stats:', error);
     return {
@@ -98,18 +83,24 @@ export async function getQuizStats(): Promise<QuizStats> {
       profileBreakdown: { discovery: 0, active: 0, vip: 0 },
       averageScore: 0,
       completionRate: 0,
-      latestParticipants: []
+      accuracyRate: 0,
+      averageTimePerQuestion: 0,
+      dropOffRate: 0,
+      countryDistribution: {},
+      engagementMetrics: {
+        averageSessionDuration: 0,
+        questionsPerSession: 0,
+        returnRate: 0
+      }
     };
   }
 }
 
 export async function createQuizQuestion(question: Omit<QuizQuestion, 'id' | 'created_at'>): Promise<void> {
   try {
-    const { error } = await supabase
-      .from('quiz_questions')
-      .insert([question]);
-
-    if (error) throw error;
+    // Import and use the enhanced question creation function
+    const { createEnhancedQuizQuestion } = await import('./quiz-enhanced');
+    await createEnhancedQuizQuestion(question);
   } catch (error) {
     console.error('Error creating quiz question:', error);
     throw error;
@@ -118,12 +109,33 @@ export async function createQuizQuestion(question: Omit<QuizQuestion, 'id' | 'cr
 
 export async function updateQuizQuestion(id: number, updates: Partial<QuizQuestion>): Promise<void> {
   try {
+    // Import validation function
+    const { validateQuizQuestion } = await import('./quiz-validation');
+    
+    // Validate updates if they include core question data
+    if (updates.text || updates.type) {
+      const validation = validateQuizQuestion({
+        text: updates.text || '',
+        type: updates.type || 'personal',
+        required: updates.required !== undefined ? updates.required : true,
+        order_index: updates.order_index || 0
+      });
+      
+      if (!validation.isValid) {
+        throw new Error(`Invalid question updates: ${validation.errors.join(', ')}`);
+      }
+    }
+
     const { error } = await supabase
       .from('quiz_questions')
       .update(updates)
       .eq('id', id);
 
     if (error) throw error;
+    
+    // Invalidate cache after update
+    const { invalidateQuizCache } = await import('./quiz-statistics-cache');
+    await invalidateQuizCache();
   } catch (error) {
     console.error('Error updating quiz question:', error);
     throw error;
@@ -138,6 +150,10 @@ export async function deleteQuizQuestion(id: number): Promise<void> {
       .eq('id', id);
 
     if (error) throw error;
+    
+    // Invalidate cache after deletion
+    const { invalidateQuizCache } = await import('./quiz-statistics-cache');
+    await invalidateQuizCache();
   } catch (error) {
     console.error('Error deleting quiz question:', error);
     throw error;
@@ -164,27 +180,34 @@ export async function sendQuizToNumbers(phoneNumbers: string[], userId?: string)
 
 export async function exportQuizResults(): Promise<string> {
   try {
-    const { data: users, error } = await supabase
-      .from('quiz_users')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
+    // Get all participants with pagination
+    const { getQuizParticipants } = await import('./quiz-chatbot');
+    const result = await getQuizParticipants(1, 1000); // Get up to 1000 for export
+    const users = result.participants;
 
     // Create CSV content
-    const headers = ['Phone Number', 'Name', 'Email', 'Address', 'Profession', 'Score', 'Profile', 'Status', 'Created At'];
+    const headers = [
+      'Phone Number', 'Web User ID', 'Name', 'Email', 'Address', 'Profession', 
+      'Country', 'Score', 'Profile', 'Status', 'Engagement Level', 
+      'Total Sessions', 'Last Session', 'Created At'
+    ];
     const csvRows = [headers.join(',')];
 
-    users?.forEach(user => {
+    users.forEach(user => {
       const row = [
-        user.phone_number,
+        user.phone_number || '',
+        user.web_user_id || '',
         user.name || '',
         user.email || '',
         user.address || '',
         user.profession || '',
+        user.country || '',
         user.score.toString(),
         user.profile,
         user.status,
+        user.engagement_level || 'low',
+        (user.total_sessions || 0).toString(),
+        user.last_session_at ? new Date(user.last_session_at).toLocaleString() : '',
         new Date(user.created_at).toLocaleString()
       ].map(value => `"${value.replace(/"/g, '""')}"`);
       

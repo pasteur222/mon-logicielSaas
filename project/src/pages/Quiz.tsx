@@ -1,26 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import { MessageSquare, Bot, Settings, RefreshCw, AlertCircle, Plus, X, Save, Play, Pause, Database, BarChart2, Trash2, AlertTriangle, Calendar, Clock, Users, CheckCircle, Target, Send, Trophy, Edit } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { getQuizStats, sendQuizToNumbers, exportQuizResults, getQuestionTypeLabel, type QuizStats } from '../lib/quiz-marketing';
+import { sendQuizToNumbers, exportQuizResults, getQuestionTypeLabel } from '../lib/quiz-marketing';
+import { getEnhancedQuizStatistics, getQuizParticipants } from '../lib/quiz-chatbot';
 import { getProfileColor, getStatusColor } from '../utils/colors';
 import BackButton from '../components/BackButton';
 import QuizMarketingManager from '../components/QuizMarketingManager';
 import ChatbotHealthMonitor from '../components/ChatbotHealthMonitor';
 import { subscribeToModuleUpdates, recalculateQuizAnalytics } from '../lib/chatbot-communication';
-import { getQuizStatistics } from '../lib/quiz-chatbot';
+import { invalidateQuizCache } from '../lib/quiz-statistics-cache';
 
 interface QuizUser {
   id: number;
   phone_number: string;
+  web_user_id?: string;
   name?: string;
   email?: string;
   address?: string;
   profession?: string;
+  country?: string;
   preferences?: any;
   score: number;
   profile: string;
   current_step: number;
   status: 'active' | 'ended' | 'completed';
+  engagement_level?: 'low' | 'medium' | 'high';
+  total_sessions?: number;
+  last_session_at?: string;
   created_at: string;
   updated_at: string;
 }
@@ -28,12 +34,30 @@ interface QuizUser {
 interface QuizQuestion {
   id: number;
   text: string;
-  type: 'personal' | 'preference' | 'quiz';
+  type: 'personal' | 'preference' | 'quiz' | 'product_test';
   options?: any;
   points?: any;
   required: boolean;
   order_index: number;
+  category?: string;
+  conditional_logic?: any;
   created_at: string;
+}
+
+interface QuizStats {
+  totalParticipants: number;
+  profileBreakdown: { discovery: number; active: number; vip: number };
+  averageScore: number;
+  completionRate: number;
+  accuracyRate: number;
+  averageTimePerQuestion: number;
+  dropOffRate: number;
+  countryDistribution: Record<string, number>;
+  engagementMetrics: {
+    averageSessionDuration: number;
+    questionsPerSession: number;
+    returnRate: number;
+  };
 }
 
 const Quiz = () => {
@@ -44,12 +68,28 @@ const Quiz = () => {
     profileBreakdown: { discovery: 0, active: 0, vip: 0 },
     averageScore: 0,
     completionRate: 0,
-    latestParticipants: []
+    accuracyRate: 0,
+    averageTimePerQuestion: 0,
+    dropOffRate: 0,
+    countryDistribution: {},
+    engagementMetrics: {
+      averageSessionDuration: 0,
+      questionsPerSession: 0,
+      returnRate: 0
+    }
   });
   const [showManager, setShowManager] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [filters, setFilters] = useState({
+    profile: '',
+    status: '',
+    country: '',
+    search: ''
+  });
 
   const loadData = async () => {
     try {
@@ -57,7 +97,7 @@ const Quiz = () => {
       setError(null);
       await Promise.all([
         loadQuestions(),
-        loadUsers(),
+        loadUsers(currentPage),
         loadStats()
       ]);
     } catch (error) {
@@ -85,13 +125,15 @@ const Quiz = () => {
 
   const loadUsers = async () => {
     try {
-      const { data, error } = await supabase
-        .from('quiz_users')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const result = await getQuizParticipants(currentPage, 20, {
+        profile: filters.profile || undefined,
+        status: filters.status || undefined,
+        country: filters.country || undefined,
+        search: filters.search || undefined
+      });
 
-      if (error) throw error;
-      setUsers(data || []);
+      setUsers(result.participants);
+      setTotalPages(result.totalPages);
     } catch (error) {
       console.error('Error fetching users:', error);
       throw new Error('Erreur lors du chargement des participants');
@@ -100,8 +142,7 @@ const Quiz = () => {
 
   const loadStats = async () => {
     try {
-      // Use the enhanced quiz statistics function
-      const statsData = await getQuizStatistics();
+      const statsData = await getEnhancedQuizStatistics();
       setStats(statsData);
     } catch (error) {
       console.error('Error loading stats:', error);
@@ -144,7 +185,8 @@ const Quiz = () => {
         table: 'quiz_answers' 
       }, () => {
         loadStats();
-        recalculateQuizAnalytics();
+        // Invalidate cache instead of full recalculation
+        invalidateQuizCache();
       })
       .subscribe();
 
@@ -171,7 +213,16 @@ const Quiz = () => {
       unsubscribeQuizUpdates();
       unsubscribeAnalyticsUpdates();
     };
-  }, []);
+  }, [currentPage, filters]);
+
+  const handlePageChange = (newPage: number) => {
+    setCurrentPage(newPage);
+  };
+
+  const handleFilterChange = (newFilters: typeof filters) => {
+    setFilters(newFilters);
+    setCurrentPage(1); // Reset to first page when filters change
+  };
 
   if (loading) {
     return (
@@ -268,10 +319,40 @@ const Quiz = () => {
           <div className="bg-white rounded-xl shadow-sm p-6">
             <div className="flex items-center gap-3 mb-2">
               <BarChart2 className="w-5 h-5 text-purple-600" />
-              <h3 className="font-medium text-gray-900">Accuracy Rate</h3>
+              <h3 className="font-medium text-gray-900">Taux de Précision</h3>
             </div>
-            <p className="text-2xl font-semibold text-gray-900">{(stats.accuracyRate || 0).toFixed(1)}%</p>
-            <p className="text-sm text-gray-500 mt-1">Correct answers</p>
+            <p className="text-2xl font-semibold text-gray-900">{stats.accuracyRate.toFixed(1)}%</p>
+            <p className="text-sm text-gray-500 mt-1">Réponses correctes</p>
+          </div>
+        </div>
+
+        {/* Enhanced Metrics */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+          <div className="bg-white rounded-xl shadow-sm p-6">
+            <div className="flex items-center gap-3 mb-2">
+              <Clock className="w-5 h-5 text-blue-600" />
+              <h3 className="font-medium text-gray-900">Temps Moyen/Question</h3>
+            </div>
+            <p className="text-2xl font-semibold text-gray-900">{stats.averageTimePerQuestion.toFixed(1)}s</p>
+            <p className="text-sm text-gray-500 mt-1">Engagement utilisateur</p>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm p-6">
+            <div className="flex items-center gap-3 mb-2">
+              <AlertCircle className="w-5 h-5 text-red-600" />
+              <h3 className="font-medium text-gray-900">Taux d'Abandon</h3>
+            </div>
+            <p className="text-2xl font-semibold text-gray-900">{stats.dropOffRate.toFixed(1)}%</p>
+            <p className="text-sm text-gray-500 mt-1">Sessions abandonnées</p>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm p-6">
+            <div className="flex items-center gap-3 mb-2">
+              <RefreshCw className="w-5 h-5 text-green-600" />
+              <h3 className="font-medium text-gray-900">Taux de Retour</h3>
+            </div>
+            <p className="text-2xl font-semibold text-gray-900">{stats.engagementMetrics.returnRate.toFixed(1)}%</p>
+            <p className="text-sm text-gray-500 mt-1">Utilisateurs récurrents</p>
           </div>
         </div>
 
@@ -305,13 +386,40 @@ const Quiz = () => {
             <div className="px-6 py-4 border-b border-gray-200">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-gray-900">Participants Récents</h3>
-                <button
-                  onClick={loadData}
-                  className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  Actualiser
-                </button>
+                <div className="flex items-center gap-4">
+                  {/* Filters */}
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={filters.profile}
+                      onChange={(e) => handleFilterChange({ ...filters, profile: e.target.value })}
+                      className="text-sm border border-gray-300 rounded px-2 py-1"
+                    >
+                      <option value="">Tous profils</option>
+                      <option value="discovery">Discovery</option>
+                      <option value="active">Active</option>
+                      <option value="vip">VIP</option>
+                    </select>
+                    
+                    <select
+                      value={filters.status}
+                      onChange={(e) => handleFilterChange({ ...filters, status: e.target.value })}
+                      className="text-sm border border-gray-300 rounded px-2 py-1"
+                    >
+                      <option value="">Tous statuts</option>
+                      <option value="active">Actif</option>
+                      <option value="completed">Terminé</option>
+                      <option value="ended">Arrêté</option>
+                    </select>
+                  </div>
+                  
+                  <button
+                    onClick={loadData}
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    Actualiser
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -337,10 +445,15 @@ const Quiz = () => {
                             {user.name || user.phone_number}
                           </p>
                           {user.name && (
-                            <p className="text-sm text-gray-500 truncate">{user.phone_number}</p>
+                            <p className="text-sm text-gray-500 truncate">
+                              {user.phone_number || user.web_user_id}
+                            </p>
                           )}
                           {user.profession && (
                             <p className="text-xs text-gray-400">{user.profession}</p>
+                          )}
+                          {user.country && (
+                            <p className="text-xs text-gray-400">📍 {user.country}</p>
                           )}
                         </div>
                       </div>
@@ -350,6 +463,11 @@ const Quiz = () => {
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getProfileColor(user.profile)}`}>
                             {user.profile.toUpperCase()}
                           </span>
+                          {user.engagement_level && (
+                            <p className="text-xs text-gray-500 mt-1">
+                              Engagement: {user.engagement_level}
+                            </p>
+                          )}
                         </div>
                         <div className="text-right">
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(user.status)}`}>
@@ -359,6 +477,11 @@ const Quiz = () => {
                           <p className="text-xs text-gray-500 mt-1">
                             {new Date(user.created_at).toLocaleDateString()}
                           </p>
+                          {user.total_sessions && user.total_sessions > 1 && (
+                            <p className="text-xs text-blue-600 mt-1">
+                              {user.total_sessions} sessions
+                            </p>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -366,6 +489,31 @@ const Quiz = () => {
                 ))
               )}
             </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+                <div className="text-sm text-gray-500">
+                  Page {currentPage} sur {totalPages}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    disabled={currentPage <= 1}
+                    className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    Précédent
+                  </button>
+                  <button
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    disabled={currentPage >= totalPages}
+                    className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    Suivant
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

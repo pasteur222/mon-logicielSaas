@@ -770,6 +770,7 @@ const QuizMarketingManager: React.FC<QuizMarketingManagerProps> = ({ onClose }) 
                   <option value="personal">Personnel (nom, email, adresse, profession)</option>
                   <option value="preference">Préférence (produits/services)</option>
                   <option value="quiz">Quiz (questions à points)</option>
+                  <option value="product_test">Test Produit (Oui/Non)</option>
                 </select>
                 </div>
 
@@ -872,6 +873,101 @@ const QuizMarketingManager: React.FC<QuizMarketingManagerProps> = ({ onClose }) 
                   </div>
                 </div>
               )}
+
+              {newQuestion.type === 'product_test' && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <h4 className="font-medium text-green-800 mb-3">Configuration Test Produit</h4>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Réponse attendue
+                      </label>
+                      <div className="flex items-center gap-6">
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name="product_answer"
+                            checked={newQuestion.correct_answer === true}
+                            onChange={() => setNewQuestion(prev => ({ ...prev, correct_answer: true }))}
+                            className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300"
+                          />
+                          <span className="text-sm font-medium text-gray-700">Oui</span>
+                        </label>
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name="product_answer"
+                            checked={newQuestion.correct_answer === false}
+                            onChange={() => setNewQuestion(prev => ({ ...prev, correct_answer: false }))}
+                            className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300"
+                          />
+                          <span className="text-sm font-medium text-gray-700">Non</span>
+                        </label>
+                      </div>
+                      <p className="mt-2 text-sm text-green-600">
+                        Sélectionnez la réponse qui indique un intérêt pour le produit/service
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Points pour intérêt (JSON)
+                      </label>
+                      <textarea
+                        value={JSON.stringify(newQuestion.points || { interest_score: 15 }, null, 2)}
+                        onChange={(e) => {
+                          try {
+                            const points = JSON.parse(e.target.value);
+                            setNewQuestion(prev => ({ ...prev, points }));
+                          } catch (error) {
+                            // Invalid JSON, ignore
+                          }
+                        }}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent font-mono text-sm"
+                        rows={3}
+                        placeholder={`{"interest_score": 15}`}
+                      />
+                      <p className="mt-1 text-sm text-green-600">
+                        Points attribués pour l'intérêt exprimé
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Conditional Logic Configuration */}
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                <h4 className="font-medium text-purple-800 mb-3">Logique Conditionnelle (Optionnel)</h4>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Configuration JSON (optionnel)
+                    </label>
+                    <textarea
+                      value={JSON.stringify(newQuestion.conditional_logic || {}, null, 2)}
+                      onChange={(e) => {
+                        try {
+                          const logic = JSON.parse(e.target.value);
+                          setNewQuestion(prev => ({ ...prev, conditional_logic: Object.keys(logic).length > 0 ? logic : undefined }));
+                        } catch (error) {
+                          // Invalid JSON, ignore
+                        }
+                      }}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent font-mono text-sm"
+                      rows={4}
+                      placeholder={`{
+  "show_if": {
+    "question_id": "uuid-of-previous-question",
+    "answer_value": "oui"
+  }
+}`}
+                    />
+                    <p className="mt-1 text-sm text-purple-600">
+                      Définissez quand cette question doit être affichée selon les réponses précédentes
+                    </p>
+                  </div>
+                </div>
+              </div>
 
               <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
                 <input

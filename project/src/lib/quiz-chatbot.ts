@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { createGroqClient } from './groq-config';
+import { processEnhancedQuizMessage, getEnhancedQuizStatistics, getPaginatedQuizParticipants } from './quiz-enhanced';
 import { 
   saveConversationMessage, 
   saveQuizAnswer, 
@@ -31,239 +32,58 @@ interface QuizQuestion {
 }
 
 /**
+ * Get enhanced quiz statistics with real-time calculation
+ */
+export async function getEnhancedQuizStatistics(): Promise<any> {
+  try {
+    // Use enhanced statistics with caching
+    const { getEnhancedQuizStatistics: getStats } = await import('./quiz-enhanced');
+    return await getStats();
+  } catch (error) {
+    console.error('Error getting enhanced quiz statistics:', error);
+    return {
+      totalParticipants: 0,
+      profileBreakdown: { discovery: 0, active: 0, vip: 0 },
+      averageScore: 0,
+      completionRate: 0,
+      accuracyRate: 0,
+      averageTimePerQuestion: 0,
+      dropOffRate: 0,
+      countryDistribution: {},
+      engagementMetrics: {
+        averageSessionDuration: 0,
+        questionsPerSession: 0,
+        returnRate: 0
+      }
+    };
+  }
+}
+
+/**
  * Enhanced quiz message processing with complete answer tracking
  */
 export async function processQuizMessage(message: QuizMessage): Promise<QuizMessage> {
-  const startTime = Date.now();
-  
   try {
-    console.log('🎯 [QUIZ] Processing message:', {
-      hasText: !!message.content,
-      source: message.source,
-      phoneNumber: message.phoneNumber,
-      webUserId: message.webUserId,
-      contentLength: message.content?.length || 0
-    });
-
-    // Get or create quiz user
-    const userIdentifier = message.phoneNumber || message.webUserId || 'unknown';
-    const quizUser = await getOrCreateQuizUser(userIdentifier);
-    
-    console.log('👤 [QUIZ] Quiz user:', {
-      id: quizUser.id,
-      score: quizUser.score,
-      profile: quizUser.profile,
-      currentStep: quizUser.current_step
-    });
-
-    // Save incoming user message
-    if (message.sender === 'user') {
-      await saveConversationMessage({
-        phone_number: message.phoneNumber,
-        web_user_id: message.webUserId,
-        session_id: message.sessionId,
-        source: message.source,
-        content: message.content,
-        sender: message.sender,
-        intent: 'quiz',
-        user_agent: message.userAgent
-      });
-    }
-
-    // Get current question based on user's step
-    const { data: questions, error: questionsError } = await supabase
-      .from('quiz_questions')
-      .select('*')
-      .order('order_index', { ascending: true });
-
-    if (questionsError) {
-      throw new Error(`Failed to get quiz questions: ${questionsError.message}`);
-    }
-
-    if (!questions || questions.length === 0) {
-      const noQuestionsResponse = "Désolé, aucune question n'est disponible pour le moment. Veuillez contacter l'administrateur.";
-      
-      await saveConversationMessage({
-        phone_number: message.phoneNumber,
-        web_user_id: message.webUserId,
-        session_id: message.sessionId,
-        source: message.source,
-        content: noQuestionsResponse,
-        sender: 'bot',
-        intent: 'quiz'
-      });
-
-      return {
-        ...message,
-        content: noQuestionsResponse,
-        sender: 'bot'
-      };
-    }
-
-    // Get user profile for Groq configuration
-    let userId = null;
-    
-    if (message.phoneNumber) {
-      const { data: userProfile } = await supabase
-        .from('profils_utilisateurs')
-        .select('id')
-        .eq('phone_number', message.phoneNumber)
-        .maybeSingle();
-      
-      if (userProfile) {
-        userId = userProfile.id;
-      }
-    }
-
-    if (!userId) {
-      // Get any available Groq configuration as fallback
-      const { data: anyGroqConfig } = await supabase
-        .from('user_groq_config')
-        .select('user_id')
-        .limit(1)
-        .maybeSingle();
-        
-      if (anyGroqConfig) {
-        userId = anyGroqConfig.user_id;
-      } else {
-        throw new Error('No Groq configuration found for quiz');
-      }
-    }
-
-    // Create Groq client
-    const groq = await createGroqClient(userId);
-
-    // Process user answer if they're answering a question
-    let response = '';
-    
-    if (quizUser.current_step < questions.length) {
-      const currentQuestion = questions[quizUser.current_step];
-      
-      // Check if this is an answer to the current question
-      if (message.sender === 'user' && isAnswerToQuestion(message.content, currentQuestion)) {
-        await processQuizAnswer(message.content, currentQuestion, quizUser);
-        
-        // Move to next question or complete quiz
-        const nextStep = quizUser.current_step + 1;
-        
-        if (nextStep >= questions.length) {
-          // Quiz completed
-          await supabase
-            .from('quiz_users')
-            .update({
-              status: 'completed',
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', quizUser.id);
-
-          response = `🎉 Félicitations ! Vous avez terminé le quiz avec un score de ${quizUser.score} points.\n\nVotre profil marketing: ${quizUser.profile.toUpperCase()}\n\nMerci pour votre participation !`;
-          
-          // Trigger completion event
-          await triggerModuleUpdate('quiz', {
-            action: 'quiz_completed',
-            userId: quizUser.id,
-            finalScore: quizUser.score,
-            profile: quizUser.profile
-          });
-        } else {
-          // Move to next question
-          await supabase
-            .from('quiz_users')
-            .update({
-              current_step: nextStep,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', quizUser.id);
-
-          const nextQuestion = questions[nextStep];
-          response = formatQuizQuestion(nextQuestion, nextStep + 1, questions.length);
-        }
-      } else {
-        // Not an answer, provide current question
-        response = formatQuizQuestion(currentQuestion, quizUser.current_step + 1, questions.length);
-      }
-    } else {
-      // Quiz already completed or no more questions
-      response = `Vous avez déjà terminé le quiz avec un score de ${quizUser.score} points. Votre profil: ${quizUser.profile.toUpperCase()}`;
-    }
-
-    // If no specific response generated, use AI for general interaction
-    if (!response) {
-      const completion = await groq.chat.completions.create({
-        messages: [
-          {
-            role: "system",
-            content: `Vous êtes un maître de quiz qui crée des quiz éducatifs engageants.
-            Votre objectif est de rendre l'apprentissage amusant grâce à des questions et défis interactifs.
-            Soyez enthousiaste, encourageant et fournissez des commentaires informatifs.
-            ${message.source === 'web' ? 'L\'utilisateur participe via votre site web.' : 'L\'utilisateur participe via WhatsApp.'}`
-          },
-          { role: "user", content: message.content }
-        ],
-        model: 'llama3-70b-8192',
-        temperature: 0.7,
-        max_tokens: 1500,
-      });
-
-      response = completion.choices[0]?.message?.content || 
-        "Bienvenue au quiz ! Êtes-vous prêt à commencer ?";
-    }
-
-    // Calculate response time
-    const responseTime = (Date.now() - startTime) / 1000;
-
-    // Save bot response with guaranteed persistence
-    const botMessage: QuizMessage = {
+    // Use the enhanced quiz processing
+    return await processEnhancedQuizMessage({
       phoneNumber: message.phoneNumber,
       webUserId: message.webUserId,
       sessionId: message.sessionId,
       source: message.source,
-      content: response,
-      sender: 'bot'
-    };
-
-    await saveConversationMessage({
-      phone_number: botMessage.phoneNumber,
-      web_user_id: botMessage.webUserId,
-      session_id: botMessage.sessionId,
-      source: botMessage.source,
-      content: botMessage.content,
-      sender: botMessage.sender,
-      intent: 'quiz',
-      response_time: responseTime
+      content: message.content,
+      sender: message.sender,
+      userAgent: message.userAgent
     });
 
-    console.log('✅ [QUIZ] Message processed successfully');
-    return botMessage;
-
   } catch (error) {
-    console.error('❌ [QUIZ] Error processing message:', error);
+    console.error('❌ [QUIZ] Error in processQuizMessage:', error);
     
-    // Save error response to ensure user gets feedback
-    const errorResponse = message.source === 'web'
-      ? "Désolé, je rencontre des difficultés techniques. Veuillez actualiser la page et réessayer."
-      : "Désolé, je rencontre des difficultés techniques. Veuillez réessayer plus tard.";
-
-    try {
-      await saveConversationMessage({
-        phone_number: message.phoneNumber,
-        web_user_id: message.webUserId,
-        session_id: message.sessionId,
-        source: message.source,
-        content: errorResponse,
-        sender: 'bot',
-        intent: 'quiz'
-      });
-    } catch (saveError) {
-      console.error('Failed to save error response:', saveError);
-    }
-
     return {
       phoneNumber: message.phoneNumber,
       webUserId: message.webUserId,
       sessionId: message.sessionId,
       source: message.source,
-      content: errorResponse,
+      content: "Désolé, je rencontre des difficultés techniques. Veuillez réessayer plus tard.",
       sender: 'bot'
     };
   }
@@ -484,66 +304,32 @@ function formatQuizQuestion(question: QuizQuestion, currentNumber: number, total
 }
 
 /**
- * Get quiz statistics with real-time calculation
+ * Get paginated quiz participants with enhanced filtering
  */
-export async function getQuizStatistics(): Promise<any> {
+export async function getQuizParticipants(
+  page: number = 1,
+  limit: number = 20,
+  filters?: {
+    profile?: string;
+    status?: string;
+    country?: string;
+    search?: string;
+  }
+): Promise<{
+  participants: any[];
+  totalCount: number;
+  totalPages: number;
+  currentPage: number;
+}> {
   try {
-    const { data: users, error } = await supabase
-      .from('quiz_users')
-      .select('*');
-
-    if (error) {
-      throw new Error(`Failed to get quiz users: ${error.message}`);
-    }
-
-    const { data: answers, error: answersError } = await supabase
-      .from('quiz_answers')
-      .select('*');
-
-    if (answersError) {
-      throw new Error(`Failed to get quiz answers: ${answersError.message}`);
-    }
-
-    const totalParticipants = users?.length || 0;
-    const profileBreakdown = {
-      discovery: users?.filter(u => u.profile === 'discovery').length || 0,
-      active: users?.filter(u => u.profile === 'active').length || 0,
-      vip: users?.filter(u => u.profile === 'vip').length || 0
-    };
-
-    const averageScore = totalParticipants > 0
-      ? users!.reduce((sum, user) => sum + user.score, 0) / totalParticipants
-      : 0;
-
-    const completedUsers = users?.filter(u => u.status === 'completed').length || 0;
-    const completionRate = totalParticipants > 0 ? (completedUsers / totalParticipants) * 100 : 0;
-
-    const totalAnswers = answers?.length || 0;
-    const correctAnswers = answers?.filter(a => a.points_awarded > 0).length || 0;
-    const accuracyRate = totalAnswers > 0 ? (correctAnswers / totalAnswers) * 100 : 0;
-
-    return {
-      totalParticipants,
-      profileBreakdown,
-      averageScore,
-      completionRate,
-      totalAnswers,
-      correctAnswers,
-      accuracyRate,
-      latestParticipants: users?.slice(0, 10) || []
-    };
-
+    return await getPaginatedQuizParticipants(page, limit, filters);
   } catch (error) {
-    console.error('Error getting quiz statistics:', error);
+    console.error('Error getting quiz participants:', error);
     return {
-      totalParticipants: 0,
-      profileBreakdown: { discovery: 0, active: 0, vip: 0 },
-      averageScore: 0,
-      completionRate: 0,
-      totalAnswers: 0,
-      correctAnswers: 0,
-      accuracyRate: 0,
-      latestParticipants: []
+      participants: [],
+      totalCount: 0,
+      totalPages: 0,
+      currentPage: 1
     };
   }
 }
@@ -636,8 +422,30 @@ export async function checkQuizHealth(): Promise<{
       healthy = false;
     }
 
+    // Test quiz_sessions table
+    const { error: sessionsError } = await supabase
+      .from('quiz_sessions')
+      .select('count')
+      .limit(1);
+
+    if (sessionsError) {
+      errors.push(`Quiz sessions table: ${sessionsError.message}`);
+      healthy = false;
+    }
+
+    // Test question_engagement table
+    const { error: engagementError } = await supabase
+      .from('question_engagement')
+      .select('count')
+      .limit(1);
+
+    if (engagementError) {
+      errors.push(`Question engagement table: ${engagementError.message}`);
+      healthy = false;
+    }
+
     // Get current statistics
-    const stats = await getQuizStatistics();
+    const stats = await getEnhancedQuizStatistics();
 
     return {
       healthy,
