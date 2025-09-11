@@ -52,6 +52,29 @@ const DashboardCharts: React.FC<DashboardChartsProps> = ({ moduleType }) => {
 
   useEffect(() => {
     loadChartData();
+    
+    // Set up real-time listeners for campaign metrics updates
+    const handleCampaignUpdate = (event: CustomEvent) => {
+      console.log('📊 [DASHBOARD-CHARTS] Campaign metrics updated:', event.detail);
+      if (moduleType === 'whatsapp') {
+        loadChartData();
+      }
+    };
+    
+    const handleMessageUpdate = (event: CustomEvent) => {
+      console.log('📨 [DASHBOARD-CHARTS] Message status updated:', event.detail);
+      if (moduleType === 'whatsapp') {
+        loadChartData();
+      }
+    };
+    
+    window.addEventListener('campaignMetricsUpdated', handleCampaignUpdate as EventListener);
+    window.addEventListener('messageStatusUpdated', handleMessageUpdate as EventListener);
+    
+    return () => {
+      window.removeEventListener('campaignMetricsUpdated', handleCampaignUpdate as EventListener);
+      window.removeEventListener('messageStatusUpdated', handleMessageUpdate as EventListener);
+    };
   }, [moduleType]);
 
   const loadChartData = async () => {

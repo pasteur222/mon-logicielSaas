@@ -35,8 +35,17 @@ const CampaignTestingPanel: React.FC<CampaignTestingPanelProps> = ({ onClose }) 
     // Check if scheduler is running
     setSchedulerRunning(true);
     
+    // Set up real-time listeners for campaign updates
+    const handleCampaignUpdate = (event: CustomEvent) => {
+      console.log('📊 [CAMPAIGN-TESTING] Campaign metrics updated:', event.detail);
+      loadData(); // Refresh data when campaigns are updated
+    };
+    
+    window.addEventListener('campaignMetricsUpdated', handleCampaignUpdate as EventListener);
+    
     return () => {
       stopCampaignScheduler();
+      window.removeEventListener('campaignMetricsUpdated', handleCampaignUpdate as EventListener);
     };
   }, []);
 

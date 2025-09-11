@@ -392,7 +392,21 @@ async function updateUserPreferences(userId: string, questionText: string, answe
       .eq('id', userId)
       .single();
 
-    const currentPreferences = currentUser?.preferences || {};
+    // Ensure preferences is always an object, even if stored as string
+    let currentPreferences = {};
+    if (currentUser?.preferences) {
+      if (typeof currentUser.preferences === 'string') {
+        try {
+          currentPreferences = JSON.parse(currentUser.preferences);
+        } catch (parseError) {
+          console.warn('Failed to parse preferences as JSON, using empty object:', parseError);
+          currentPreferences = {};
+        }
+      } else if (typeof currentUser.preferences === 'object') {
+        currentPreferences = currentUser.preferences;
+      }
+    }
+    
     const updatedPreferences = {
       ...currentPreferences,
       [questionText]: answer,

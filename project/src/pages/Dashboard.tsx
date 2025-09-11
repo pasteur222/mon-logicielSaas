@@ -89,10 +89,19 @@ const Dashboard = () => {
       fetchDashboardStats();
     });
 
+    // Subscribe to campaign metrics updates
+    const unsubscribeCampaigns = subscribeToModuleUpdates('campaigns', (payload) => {
+      console.log('Dashboard received campaign update:', payload);
+      if (payload.action === 'metrics_updated') {
+        fetchDashboardStats();
+      }
+    });
+
     return () => {
       unsubscribeConversations();
       unsubscribeQuiz();
       unsubscribeCustomerService();
+      unsubscribeCampaigns();
     };
   }, [user, isAdmin]);
 

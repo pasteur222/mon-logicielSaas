@@ -326,6 +326,7 @@ export async function getOrCreateQuizUser(phoneNumber: string): Promise<QuizUser
         profile: 'discovery',
         current_step: 0,
         status: 'active',
+        preferences: {},
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       })

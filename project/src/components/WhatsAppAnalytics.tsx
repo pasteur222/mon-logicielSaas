@@ -37,6 +37,19 @@ const WhatsAppAnalytics: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
   useEffect(() => {
     loadAnalytics();
+    
+    // Set up real-time listener for message status updates
+    const handleMessageStatusUpdate = (event: CustomEvent) => {
+      console.log('📊 [ANALYTICS] Real-time message status update received:', event.detail);
+      // Refresh analytics when message status changes
+      loadAnalytics();
+    };
+    
+    window.addEventListener('messageStatusUpdated', handleMessageStatusUpdate as EventListener);
+    
+    return () => {
+      window.removeEventListener('messageStatusUpdated', handleMessageStatusUpdate as EventListener);
+    };
   }, [dateRange]);
 
   const loadAnalytics = async () => {

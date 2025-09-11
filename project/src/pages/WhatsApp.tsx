@@ -54,7 +54,7 @@ const WhatsApp = () => {
     checkConnection();
     loadTemplates();
     
-    // Set up real-time subscription for campaign metrics updates
+    // Set up real-time subscriptions for campaign and analytics updates
     const campaignSubscription = supabase
       .channel('campaign_metrics_updates')
       .on('postgres_changes', { 
@@ -63,12 +63,36 @@ const WhatsApp = () => {
         table: 'campaigns' 
       }, (payload) => {
         console.log('📊 [WHATSAPP] Campaign metrics updated:', payload);
-        // Trigger a refresh of any displayed campaign data
+        // Force refresh of campaign data in real-time
+        if (activeTab === 'campaigns') {
+          // Trigger a refresh of campaign data
+          window.dispatchEvent(new CustomEvent('campaignMetricsUpdated', { 
+            detail: payload 
+          }));
+        }
       })
       .subscribe();
 
+    // Set up subscription for message logs to track delivery status
+    const messageLogsSubscription = supabase
+      .channel('message_logs_updates')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'message_logs' 
+      }, (payload) => {
+        console.log('📨 [WHATSAPP] Message log updated:', payload);
+        // Update analytics in real-time
+        if (activeTab === 'analytics') {
+          window.dispatchEvent(new CustomEvent('messageStatusUpdated', { 
+            detail: payload 
+          }));
+        }
+      })
+      .subscribe();
     return () => {
       campaignSubscription.unsubscribe();
+      messageLogsSubscription.unsubscribe();
     };
   }, []);
 

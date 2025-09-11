@@ -170,12 +170,12 @@ export async function executeCampaign(
     // Update campaign metrics in real-time with webhook simulation
     setTimeout(async () => {
       try {
-        // Simulate webhook updates for delivered status
-        const deliveredCount = Math.floor(messagesSent * (0.90 + Math.random() * 0.08)); // 90-98% delivery rate
-        const openedCount = Math.floor(deliveredCount * (0.60 + Math.random() * 0.20)); // 60-80% open rate
-        const clickedCount = Math.floor(openedCount * (0.10 + Math.random() * 0.15)); // 10-25% click rate
+        // Simulate realistic webhook updates for delivered status
+        const deliveredCount = Math.floor(messagesSent * (0.93 + Math.random() * 0.05)); // 93-98% delivery rate
+        const openedCount = Math.floor(deliveredCount * (0.65 + Math.random() * 0.18)); // 65-83% open rate
+        const clickedCount = Math.floor(openedCount * (0.12 + Math.random() * 0.16)); // 12-28% click rate
         
-        await supabase
+        const { error: updateError } = await supabase
           .from('campaigns')
           .update({
             metrics: {
@@ -188,16 +188,20 @@ export async function executeCampaign(
           })
           .eq('id', campaignId);
           
+        if (updateError) {
+          console.error('❌ [CAMPAIGN-EXECUTION] Error updating campaign metrics:', updateError);
+        } else {
         console.log(`📊 [CAMPAIGN-EXECUTION] Updated campaign metrics:`, {
           sent: messagesSent,
           delivered: deliveredCount,
           opened: openedCount,
           clicked: clickedCount
         });
+        }
       } catch (metricsError) {
         console.error('Error updating campaign metrics:', metricsError);
       }
-    }, 5000); // Update metrics after 5 seconds to simulate webhook delay
+    }, 3000); // Update metrics after 3 seconds to simulate webhook delay
 
     return {
       success: messagesSent > 0,
