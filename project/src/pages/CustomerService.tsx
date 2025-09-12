@@ -7,6 +7,8 @@ import BackButton from '../components/BackButton';
 import GroqApiCheck from '../components/GroqApiCheck';
 import ChatbotWebIntegration from '../components/ChatbotWebIntegration';
 import ChatbotHealthMonitor from '../components/ChatbotHealthMonitor';
+import ConversationList from '../components/ConversationList';
+import { processConversationsIntoThreads, getConversationAnalytics } from '../lib/conversation-utils';
 import { subscribeToModuleUpdates, ensureConversationSync } from '../lib/chatbot-communication';
 import { 
   processCustomerServiceMessage, 
@@ -18,6 +20,7 @@ import {
 interface Conversation {
   id: string;
   phone_number: string;
+  web_user_id?: string;
   content: string;
   sender: 'user' | 'bot';
   intent?: string;
@@ -133,7 +136,7 @@ const CustomerService = () => {
         .select('*')
         .eq('intent', 'client')
         .order('created_at', { ascending: false })
-        .limit(100);
+        .limit(1000); // Increase limit to get more complete conversations
 
       if (error) {
         console.error('Error loading conversations:', error);
@@ -166,40 +169,17 @@ const CustomerService = () => {
 
   const loadStats = async () => {
     try {
-      const { data: conversations } = await supabase
-        .from('customer_conversations')
-        .select('*')
-        .eq('intent', 'client');
-
-      if (conversations) {
-        const userMessages = conversations.filter(c => c.sender === 'user');
-        const botMessages = conversations.filter(c => c.sender === 'bot');
-        
-        const responseTimes = botMessages
-          .filter(m => m.response_time)
-          .map(m => m.response_time);
-        
-        const averageResponseTime = responseTimes.length > 0
-          ? responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length
-          : 0;
-
-        // Calculate active chats (conversations in last 24 hours)
-        const last24Hours = new Date(Date.now() - 24 * 60 * 60 * 1000);
-        const activeChats = new Set(
-          conversations
-            .filter(c => new Date(c.created_at) > last24Hours)
-            .map(c => c.phone_number)
-        ).size;
-
-        setStats({
-          totalConversations: userMessages.length,
-          averageResponseTime,
-          satisfactionRate: 85, // Mock data
-          activeChats,
-          resolvedTickets: Math.floor(userMessages.length * 0.8),
-          pendingTickets: Math.floor(userMessages.length * 0.2)
-        });
-      }
+      // Use the new analytics function
+      const analytics = await getConversationAnalytics('client');
+      
+      setStats({
+        totalConversations: analytics.totalMessages,
+        averageResponseTime: analytics.averageResponseTime,
+        satisfactionRate: analytics.resolutionRate,
+        activeChats: analytics.active,
+        resolvedTickets: Math.floor(analytics.totalMessages * 0.8),
+        pendingTickets: Math.floor(analytics.totalMessages * 0.2)
+      });
     } catch (error) {
       console.error('Error loading stats:', error);
     }
@@ -285,42 +265,8 @@ const CustomerService = () => {
   };
 
   const handleDeleteSelectedConversations = async () => {
-    if (selectedConversations.length === 0) {
-      setError('Veuillez sélectionner au moins une conversation à supprimer');
-      return;
-    }
-
-    if (!confirm(`Êtes-vous sûr de vouloir supprimer ${selectedConversations.length} conversation(s) ? Cette action est irréversible.`)) {
-      return;
-    }
-
-    try {
-      setDeletingConversations(true);
-      setError(null);
-
-      // Use the dedicated deletion function
-      const result = await deleteCustomerServiceConversations(selectedConversations);
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Deletion failed');
-      }
-
-      // Update local state immediately to reflect deletion
-      setConversations(prev => prev.filter(conv => !selectedConversations.includes(conv.id)));
-      
-      setSuccess(`${result.deletedCount} conversation(s) supprimée(s) avec succès`);
-      setSelectedConversations([]);
-      
-      // Reload stats to reflect the changes
-      await loadStats();
-      
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (error) {
-      console.error('Error deleting conversations:', error);
-      setError(`Erreur lors de la suppression des conversations: ${error.message}`);
-    } finally {
-      setDeletingConversations(false);
-    }
+    // Implementation moved to ConversationList component
+    setError('Fonctionnalité déplacée vers la nouvelle interface de conversations');
   };
 
   const handleDeleteRecentConversations = async () => {
@@ -369,23 +315,11 @@ const CustomerService = () => {
     }
   };
 
-  const toggleConversationSelection = (conversationId: string) => {
-    setSelectedConversations(prev => 
-      prev.includes(conversationId) 
-        ? prev.filter(id => id !== conversationId)
-        : [...prev, conversationId]
-    );
-  };
-
-  const selectAllConversations = () => {
-    if (selectedConversations.length === conversations.length) {
-      setSelectedConversations([]);
-    } else {
-      setSelectedConversations(conversations.map(c => c.id));
-    }
-  };
-  const handleSendManualMessage = async () => {
-    if (!selectedConversation || !manualMessage.trim()) {
+  const handleSendManualMessage = async (participantId?: string, messageContent?: string) => {
+    const targetParticipant = participantId || selectedConversation;
+    const messageToSend = messageContent || manualMessage;
+    
+    if (!targetParticipant || !messageToSend.trim()) {
       setError('Veuillez sélectionner une conversation et saisir un message');
       return;
     }
@@ -395,7 +329,9 @@ const CustomerService = () => {
       setError(null);
 
       // Find the phone number for the selected conversation
-      const conversation = conversations.find(c => c.phone_number === selectedConversation);
+      const conversation = conversations.find(c => 
+        c.phone_number === targetParticipant || c.web_user_id === targetParticipant
+      );
       if (!conversation) {
         setError('Conversation non trouvée');
         return;
@@ -404,25 +340,34 @@ const CustomerService = () => {
       // Process the manual message through the customer service chatbot
       const botResponse = await processCustomerServiceMessage({
         phoneNumber: conversation.phone_number,
+        webUserId: conversation.web_user_id,
         source: 'whatsapp',
-        content: manualMessage,
+        content: messageToSend,
         sender: 'user'
       });
 
       // Send WhatsApp message
-      const results = await sendWhatsAppMessages([{
-        phoneNumber: conversation.phone_number,
-        message: botResponse.content
-      }], user?.id);
+      if (conversation.phone_number) {
+        const results = await sendWhatsAppMessages([{
+          phoneNumber: conversation.phone_number,
+          message: botResponse.content
+        }], user?.id);
 
-      const result = results[0];
-      if (result.status === 'success') {
-        setSuccess('Message envoyé avec succès');
+        const result = results[0];
+        if (result.status === 'success') {
+          setSuccess('Message envoyé avec succès');
+          setManualMessage('');
+          setSelectedConversation(null);
+          await loadConversations();
+        } else {
+          setError(`Erreur lors de l'envoi: ${result.error}`);
+        }
+      } else {
+        // For web clients, just save the response to database
+        setSuccess('Réponse enregistrée pour le client web');
         setManualMessage('');
         setSelectedConversation(null);
         await loadConversations();
-      } else {
-        setError(`Erreur lors de l'envoi: ${result.error}`);
       }
 
       setTimeout(() => setSuccess(null), 3000);
@@ -434,9 +379,15 @@ const CustomerService = () => {
     }
   };
 
-  const getUniquePhoneNumbers = () => {
-    const phoneNumbers = new Set(conversations.map(c => c.phone_number));
-    return Array.from(phoneNumbers);
+  const getUniqueParticipants = () => {
+    const participants = new Set<string>();
+    conversations.forEach(conv => {
+      const participantId = conv.phone_number || conv.web_user_id;
+      if (participantId && participantId !== 'unknown') {
+        participants.add(participantId);
+      }
+    });
+    return Array.from(participants);
   };
 
   if (loading) {
@@ -575,9 +526,9 @@ const CustomerService = () => {
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
                   >
                     <option value="">Choisir un client...</option>
-                    {getUniquePhoneNumbers().map((phoneNumber) => (
-                      <option key={phoneNumber} value={phoneNumber}>
-                        {phoneNumber}
+                    {getUniqueParticipants().map((participantId) => (
+                      <option key={participantId} value={participantId}>
+                        {participantId}
                       </option>
                     ))}
                   </select>
@@ -607,7 +558,7 @@ const CustomerService = () => {
                         Appuyez sur Entrée pour envoyer, Shift + Entrée pour une nouvelle ligne
                       </p>
                       <button
-                        onClick={handleSendManualMessage}
+                        onClick={() => handleSendManualMessage()}
                         disabled={!selectedConversation || !manualMessage.trim() || sendingManualMessage}
                         className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
@@ -689,110 +640,12 @@ const CustomerService = () => {
 
           {/* Recent Conversations */}
           <div className="flex-1 p-6">
-            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-gray-900">Conversations Récentes</h3>
-                  <div className="flex items-center gap-2">
-                    {selectedConversations.length > 0 && (
-                      <button
-                        onClick={handleDeleteSelectedConversations}
-                        disabled={deletingConversations}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 text-sm"
-                      >
-                        {deletingConversations ? (
-                          <RefreshCw className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Trash2 className="w-4 h-4" />
-                        )}
-                        Supprimer ({selectedConversations.length})
-                      </button>
-                    )}
-                    <button
-                      onClick={selectAllConversations}
-                      className="text-sm text-blue-600 hover:text-blue-800"
-                    >
-                      {selectedConversations.length === conversations.length ? 'Désélectionner tout' : 'Sélectionner tout'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="divide-y divide-gray-200 max-h-96 overflow-y-auto">
-                {conversations.length === 0 ? (
-                  <div className="p-6 text-center text-gray-500">
-                    <MessageSquare className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-                    <p>Aucune conversation pour le moment</p>
-                    <p className="text-sm mt-1">Les conversations apparaîtront ici après les premiers échanges</p>
-                  </div>
-                ) : (
-                  conversations.slice(0, 20).map((conversation) => (
-                    <div 
-                      key={conversation.id} 
-                      className={`p-4 hover:bg-gray-50 ${
-                        conversation.sender === 'user' ? 'bg-red-600 border-l-4 border-red-700' : ''
-                      }`}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-start gap-3">
-                          <input
-                            type="checkbox"
-                            checked={selectedConversations.includes(conversation.id)}
-                            onChange={() => toggleConversationSelection(conversation.id)}
-                            className="mt-1 h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded"
-                          />
-                        <div className="flex items-start gap-3 flex-1">
-                          <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className={`text-sm font-medium ${
-                              conversation.sender === 'user' ? 'text-white' : 'text-gray-900'
-                            }`}>
-                              {conversation.phone_number}
-                            </span>
-                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                              conversation.sender === 'user'
-                                ? 'bg-red-800 text-white'
-                                : conversation.intent === 'manual_intervention'
-                                ? 'bg-purple-100 text-purple-800'
-                                : 'bg-green-100 text-green-800'
-                            }`}>
-                              {conversation.sender === 'user' ? 'Client' : 
-                               conversation.intent === 'manual_intervention' ? 'Manuel' : 'Bot'}
-                            </span>
-                            {conversation.response_time && (
-                              <span className={`text-xs ${
-                                conversation.sender === 'user' ? 'text-red-100' : 'text-gray-500'
-                              }`}>
-                                {conversation.response_time.toFixed(1)}s
-                              </span>
-                            )}
-                          </div>
-                          <p className={`text-sm line-clamp-2 ${
-                            conversation.sender === 'user' ? 'text-white' : 'text-gray-600'
-                          }`}>{conversation.content}</p>
-                          <p className={`text-xs mt-1 ${
-                            conversation.sender === 'user' ? 'text-red-100' : 'text-gray-400'
-                          }`}>
-                            {new Date(conversation.created_at).toLocaleString()}
-                          </p>
-                          </div>
-                        </div>
-                        </div>
-                        {conversation.sender === 'user' && (
-                          <button
-                            onClick={() => setSelectedConversation(conversation.phone_number)}
-                            className="ml-4 p-2 text-white hover:bg-red-700 rounded-lg"
-                            title="Intervenir dans cette conversation"
-                          >
-                            <Phone className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
+            <ConversationList
+              conversations={conversations}
+              onSendMessage={handleSendManualMessage}
+              onRefresh={loadConversations}
+              loading={loading}
+            />
           </div>
         </div>
 

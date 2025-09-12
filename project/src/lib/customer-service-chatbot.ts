@@ -10,6 +10,7 @@ interface CustomerServiceMessage {
   content: string;
   sender: 'user' | 'bot';
   userAgent?: string;
+  web_user_id?: string;
 }
 
 /**
@@ -45,7 +46,7 @@ export async function processCustomerServiceMessage(message: CustomerServiceMess
     if (message.sender === 'user') {
       await saveConversationMessage({
         phone_number: message.phoneNumber,
-        web_user_id: message.webUserId,
+        web_user_id: message.webUserId || message.web_user_id,
         session_id: message.sessionId,
         source: message.source,
         content: message.content,
@@ -135,7 +136,7 @@ export async function processCustomerServiceMessage(message: CustomerServiceMess
 
     await saveConversationMessage({
       phone_number: botMessage.phoneNumber,
-      web_user_id: botMessage.webUserId,
+      web_user_id: botMessage.webUserId || botMessage.web_user_id,
       session_id: botMessage.sessionId,
       source: botMessage.source,
       content: finalResponse,
@@ -233,7 +234,8 @@ export async function getCustomerServiceHistory(
     console.log(`✅ [CUSTOMER-SERVICE] Retrieved ${data?.length || 0} conversation records`);
     return (data || []).map(conv => ({
       phoneNumber: conv.phone_number,
-      webUserId: conv.web_user_id,
+      webUserId: conv.web_user_id || conv.webUserId,
+      web_user_id: conv.web_user_id,
       sessionId: conv.session_id,
       source: conv.source || 'whatsapp',
       content: conv.content,
