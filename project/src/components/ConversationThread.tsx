@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MessageSquare, Phone, Globe, MapPin, User, Clock, ChevronRight, X, Send } from 'lucide-react';
+import { MessageSquare, Phone, Globe, MapPin, User, Clock, ChevronRight, X, Send, Check, FileText } from 'lucide-react';
 
 interface Message {
   id: string;
@@ -26,6 +26,9 @@ interface ConversationThreadProps {
   onSelect: (participantId: string) => void;
   isSelected: boolean;
   onSendMessage?: (participantId: string, message: string) => void;
+  onSelectForDeletion?: (participantId: string, isSelected: boolean) => void;
+  isSelectedForDeletion?: boolean;
+  onInsertTemplate?: (participantId: string) => void;
 }
 
 const ConversationThread: React.FC<ConversationThreadProps> = ({
@@ -38,7 +41,10 @@ const ConversationThread: React.FC<ConversationThreadProps> = ({
   status,
   onSelect,
   isSelected,
-  onSendMessage
+  onSendMessage,
+  onSelectForDeletion,
+  isSelectedForDeletion = false,
+  onInsertTemplate
 }) => {
   const [showFullConversation, setShowFullConversation] = useState(false);
   const [replyMessage, setReplyMessage] = useState('');
@@ -136,11 +142,28 @@ const ConversationThread: React.FC<ConversationThreadProps> = ({
       <div 
         className={`p-4 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors ${
           isSelected ? 'bg-blue-50 border-blue-200' : ''
+        } ${
+          isSelectedForDeletion ? 'bg-red-50 border-red-200' : ''
         }`}
         onClick={() => onSelect(participantId)}
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 flex-1 min-w-0">
+            {/* Selection Checkbox */}
+            {onSelectForDeletion && (
+              <div 
+                className="flex-shrink-0"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <input
+                  type="checkbox"
+                  checked={isSelectedForDeletion}
+                  onChange={(e) => onSelectForDeletion(participantId, e.target.checked)}
+                  className="h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded"
+                />
+              </div>
+            )}
+
             {/* Avatar */}
             <div className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${
               participantType === 'whatsapp' ? 'bg-green-100' : 'bg-blue-100'
@@ -268,6 +291,17 @@ const ConversationThread: React.FC<ConversationThreadProps> = ({
             {/* Quick Reply */}
             {onSendMessage && (
               <div className="p-4 border-t border-gray-200">
+                <div className="flex items-center gap-2 mb-2">
+                  {onInsertTemplate && (
+                    <button
+                      onClick={() => onInsertTemplate(participantId)}
+                      className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                    >
+                      <FileText className="w-4 h-4" />
+                      Template
+                    </button>
+                  )}
+                </div>
                 <div className="flex gap-2">
                   <input
                     type="text"

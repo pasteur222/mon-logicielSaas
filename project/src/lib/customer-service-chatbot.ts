@@ -258,49 +258,44 @@ export async function deleteCustomerServiceConversations(conversationIds: string
   error?: string;
 }> {
   try {
-    console.log('🗑️ [CUSTOMER-SERVICE] Deleting conversations:', conversationIds);
+    console.log('🗑️ [CUSTOMER-SERVICE] Starting deletion for IDs:', conversationIds);
     
     if (!conversationIds || conversationIds.length === 0) {
       throw new Error('No conversation IDs provided for deletion');
     }
 
-    // First, verify the conversations exist and are customer service conversations
-    const { data: existingConversations, error: fetchError } = await supabase
-      .from('customer_conversations')
-      .select('id, phone_number, sender, intent')
-      .in('id', conversationIds)
-      .eq('intent', 'client');
-
-    if (fetchError) {
-      console.error('❌ [CUSTOMER-SERVICE] Error fetching conversations for deletion:', fetchError);
-      throw new Error(`Failed to fetch conversations: ${fetchError.message}`);
+    // Validate and categorize IDs before sending to RPC
+    const validIds = conversationIds.filter(id => id && id.trim() !== '');
+    
+    if (validIds.length === 0) {
+      throw new Error('No valid conversation IDs provided');
     }
 
-    console.log(`📋 [CUSTOMER-SERVICE] Found ${existingConversations?.length || 0} conversations to delete`);
+    console.log('🗑️ [CUSTOMER-SERVICE] Validated IDs for deletion:', validIds);
 
-    if (!existingConversations || existingConversations.length === 0) {
-      return {
-        success: true,
-        deletedCount: 0,
-        error: 'No conversations found to delete'
-      };
-    }
-
-    // Perform the deletion
-    const { data: deletedData, error: deleteError } = await supabase
-      .from('customer_conversations')
-      .delete()
-      .in('id', conversationIds)
-      .eq('intent', 'client')
-      .select('id');
+    // Use the improved database function for safe deletion
+    const { data: deletionResult, error: deleteError } = await supabase
+      .rpc('delete_conversations_by_mixed_ids', {
+        conversation_ids: validIds,
+        target_intent: 'client'
+      });
 
     if (deleteError) {
       console.error('❌ [CUSTOMER-SERVICE] Error deleting conversations:', deleteError);
       throw new Error(`Failed to delete conversations: ${deleteError.message}`);
     }
 
-    const deletedCount = deletedData?.length || 0;
+    // The RPC function now returns a single row with deletion counts
+    const result = Array.isArray(deletionResult) ? deletionResult[0] : deletionResult;
+    const deletedCount = result?.deleted_count || 0;
+    
     console.log(`✅ [CUSTOMER-SERVICE] Successfully deleted ${deletedCount} conversations`);
+    console.log('📊 [CUSTOMER-SERVICE] Deletion breakdown:', {
+      total: deletedCount,
+      byUuid: result?.deleted_by_uuid || 0,
+      byWebId: result?.deleted_by_web_id || 0,
+      byPhone: result?.deleted_by_phone || 0
+    });
 
     return {
       success: true,
@@ -330,56 +325,42 @@ export async function deleteCustomerServiceConversationsByTimeframe(
   try {
     console.log('🗑️ [CUSTOMER-SERVICE] Deleting conversations by timeframe:', timeframe);
     
-    let cutoffDate: Date;
-    const now = new Date();
+    let timeframeHours: number;
     
     switch (timeframe) {
       case '1h':
-        cutoffDate = new Date(now.getTime() - 60 * 60 * 1000);
+        timeframeHours = 1;
         break;
       case '24h':
-        cutoffDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        timeframeHours = 24;
         break;
       case '7d':
-        cutoffDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        timeframeHours = 7 * 24;
         break;
       case 'all':
-        cutoffDate = new Date(0); // Delete all conversations
+        timeframeHours = 0; // Special case for all conversations
         break;
       default:
-        cutoffDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        timeframeHours = 24;
     }
 
-    console.log(`📅 [CUSTOMER-SERVICE] Cutoff date for ${timeframe}:`, cutoffDate.toISOString());
+    console.log(`📅 [CUSTOMER-SERVICE] Deleting conversations from last ${timeframeHours} hours (0 = all)`);
 
-    // First, get the conversations that will be deleted for verification
-    const { data: conversationsToDelete, error: fetchError } = await supabase
-      .from('customer_conversations')
-      .select('id, phone_number, created_at')
-      .eq('intent', 'client')
-      .gte('created_at', cutoffDate.toISOString());
-    
-    if (fetchError) {
-      console.error('❌ [CUSTOMER-SERVICE] Error fetching conversations for timeframe deletion:', fetchError);
-      throw new Error(`Failed to fetch conversations: ${fetchError.message}`);
-    }
-    
-    console.log(`📋 [CUSTOMER-SERVICE] Found ${conversationsToDelete?.length || 0} conversations to delete for timeframe ${timeframe}`);
-
-    // Perform the deletion
-    const { data: deletedConversations, error } = await supabase
-      .from('customer_conversations')
-      .delete()
-      .eq('intent', 'client')
-      .gte('created_at', cutoffDate.toISOString())
-      .select('id');
+    // Use the improved database function for timeframe deletion
+    const { data: deletionResult, error } = await supabase
+      .rpc('delete_conversations_by_timeframe', {
+        timeframe_hours: timeframeHours,
+        target_intent: 'client'
+      });
 
     if (error) {
       console.error('❌ [CUSTOMER-SERVICE] Error deleting conversations by timeframe:', error);
       throw new Error(`Failed to delete conversations: ${error.message}`);
     }
 
-    const deletedCount = deletedConversations?.length || 0;
+    const result = Array.isArray(deletionResult) ? deletionResult[0] : deletionResult;
+    const deletedCount = result?.deleted_count || 0;
+    
     console.log(`✅ [CUSTOMER-SERVICE] Successfully deleted ${deletedCount} conversations for timeframe ${timeframe}`);
 
     return {

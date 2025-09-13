@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Save, X, Upload, Download, Send, BarChart2, Users, Trophy, Target, AlertCircle, CheckCircle, RefreshCw } from 'lucide-react';
+import { Plus, Edit, Trash2, Save, X, Upload, Download, Send, BarChart2, Users, Trophy, Target, AlertCircle, CheckCircle, RefreshCw, FileText } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { 
   sendQuizToNumbers, 
@@ -15,6 +15,7 @@ import {
 } from '../lib/quiz-marketing';
 import { useAuth } from '../contexts/AuthContext';
 import { normalizePhoneNumber } from '../lib/whatsapp';
+import TemplateSelector from './TemplateSelector';
 
 interface QuizMarketingManagerProps {
   onClose?: () => void;
@@ -47,6 +48,8 @@ const QuizMarketingManager: React.FC<QuizMarketingManagerProps> = ({ onClose }) 
   const [phoneNumbers, setPhoneNumbers] = useState<string>('');
   const [isSending, setIsSending] = useState(false);
   const [isSavingQuestion, setIsSavingQuestion] = useState(false);
+  const [showTemplateSelector, setShowTemplateSelector] = useState(false);
+  const [campaignMessage, setCampaignMessage] = useState('');
 
   useEffect(() => {
     loadData();
@@ -238,6 +241,11 @@ const QuizMarketingManager: React.FC<QuizMarketingManagerProps> = ({ onClose }) 
       console.error('Error exporting results:', error);
       setError('Erreur lors de l\'export des résultats');
     }
+  };
+
+  const handleSelectTemplate = (template: any) => {
+    setCampaignMessage(template.content);
+    setShowTemplateSelector(false);
   };
 
   const getProfileColor = (profile: string) => {
@@ -570,6 +578,36 @@ const QuizMarketingManager: React.FC<QuizMarketingManagerProps> = ({ onClose }) 
             </div>
           </div>
           
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Message de campagne (optionnel)
+            </label>
+            <div className="space-y-2">
+              <textarea
+                value={campaignMessage}
+                onChange={(e) => setCampaignMessage(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                rows={4}
+                placeholder="Message d'accompagnement pour votre campagne quiz..."
+              />
+              <div className="flex justify-between items-center">
+                <button
+                  onClick={() => setShowTemplateSelector(true)}
+                  className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800"
+                >
+                  <FileText className="w-4 h-4" />
+                  Insérer un template
+                </button>
+                <span className="text-sm text-gray-500">
+                  {campaignMessage.length}/1000 caractères
+                </span>
+              </div>
+            </div>
+            <p className="text-sm text-gray-500 mt-1">
+              Ce message sera envoyé avec l'invitation au quiz
+            </p>
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Numéros de téléphone (un par ligne)
@@ -1011,6 +1049,16 @@ const QuizMarketingManager: React.FC<QuizMarketingManagerProps> = ({ onClose }) 
             </div>
           </div>
         </div>
+      )}
+
+      {/* Template Selector Modal */}
+      {showTemplateSelector && (
+        <TemplateSelector
+          onSelectTemplate={handleSelectTemplate}
+          onClose={() => setShowTemplateSelector(false)}
+          title="Template pour Campagne Quiz"
+          placeholder="Rechercher un template pour votre campagne..."
+        />
       )}
     </div>
   );

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Filter, RefreshCw, MessageSquare, Users, Clock, Globe, Phone } from 'lucide-react';
+import { Search, Filter, RefreshCw, MessageSquare, Users, Clock, Globe, Phone, Trash2 } from 'lucide-react';
 import ConversationThread from './ConversationThread';
+import MessageTemplateManager from './MessageTemplateManager';
 
 interface Message {
   id: string;
@@ -38,19 +39,25 @@ interface ConversationListProps {
   onSendMessage?: (participantId: string, message: string) => void;
   onRefresh?: () => void;
   loading?: boolean;
+  onDeleteConversations?: (conversationIds: string[]) => Promise<void>;
 }
 
 const ConversationList: React.FC<ConversationListProps> = ({
   conversations,
   onSendMessage,
   onRefresh,
-  loading = false
+  loading = false,
+  onDeleteConversations
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sourceFilter, setSourceFilter] = useState<'all' | 'whatsapp' | 'web'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'recent' | 'inactive'>('all');
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
   const [conversationSummaries, setConversationSummaries] = useState<ConversationSummary[]>([]);
+  const [selectedConversations, setSelectedConversations] = useState<string[]>([]);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showTemplateManager, setShowTemplateManager] = useState(false);
+  const [templateTargetParticipant, setTemplateTargetParticipant] = useState<string | null>(null);
 
   useEffect(() => {
     processConversations();
@@ -217,6 +224,49 @@ const ConversationList: React.FC<ConversationListProps> = ({
     };
   };
 
+  const handleSelectConversation = (conversationId: string, isSelected: boolean) => {
+    if (isSelected) {
+      setSelectedConversations(prev => [...prev, conversationId]);
+    } else {
+      setSelectedConversations(prev => prev.filter(id => id !== conversationId));
+    }
+  };
+
+  const handleDeleteSelected = () => {
+    if (selectedConversations.length === 0) return;
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDelete = () => {
+    if (onDeleteConversations && selectedConversations.length > 0) {
+      console.log('🗑️ [CONVERSATION-LIST] Confirming deletion of conversations:', selectedConversations);
+      
+      // Call the deletion function and refresh the list
+      onDeleteConversations(selectedConversations)?.then(() => {
+        console.log('✅ [CONVERSATION-LIST] Deletion completed successfully');
+        // Clear selection after successful deletion
+        setSelectedConversations([]);
+      }).catch((error) => {
+        console.error('❌ [CONVERSATION-LIST] Error during deletion:', error);
+        // Keep selection if deletion failed
+      });
+    }
+    setShowDeleteConfirm(false);
+  };
+
+  const handleInsertTemplate = (participantId: string) => {
+    setTemplateTargetParticipant(participantId);
+    setShowTemplateManager(true);
+  };
+
+  const handleSelectTemplate = (template: any) => {
+    if (templateTargetParticipant && onSendMessage) {
+      onSendMessage(templateTargetParticipant, template.content);
+    }
+    setShowTemplateManager(false);
+    setTemplateTargetParticipant(null);
+  };
+
   const counts = getFilterCounts();
 
   return (
@@ -234,16 +284,27 @@ const ConversationList: React.FC<ConversationListProps> = ({
               </p>
             </div>
           </div>
-          {onRefresh && (
-            <button
-              onClick={onRefresh}
-              disabled={loading}
-              className="flex items-center gap-2 px-3 py-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-              Actualiser
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {selectedConversations.length > 0 && (
+              <button
+                onClick={handleDeleteSelected}
+                className="flex items-center gap-2 px-3 py-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg"
+              >
+                <Trash2 className="w-4 h-4" />
+                Supprimer ({selectedConversations.length})
+              </button>
+            )}
+            {onRefresh && (
+              <button
+                onClick={onRefresh}
+                disabled={loading}
+                className="flex items-center gap-2 px-3 py-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                Actualiser
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Filters */}
@@ -328,6 +389,9 @@ const ConversationList: React.FC<ConversationListProps> = ({
               onSelect={(id) => setSelectedConversation(id)}
               isSelected={selectedConversation === conversation.participantId}
               onSendMessage={onSendMessage}
+              onSelectForDeletion={handleSelectConversation}
+              isSelectedForDeletion={selectedConversations.includes(conversation.participantId)}
+              onInsertTemplate={handleInsertTemplate}
             />
           ))
         )}
@@ -354,6 +418,46 @@ const ConversationList: React.FC<ConversationListProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-lg max-w-md w-full mx-4">
+            <div className="p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Confirmer la suppression</h3>
+              <p className="text-gray-600 mb-6">
+                Êtes-vous sûr de vouloir supprimer {selectedConversations.length} conversation(s) sélectionnée(s) ? 
+                Cette action est irréversible.
+              </p>
+              <div className="flex justify-end gap-4">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="px-4 py-2 text-gray-600 hover:text-gray-900"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={confirmDelete}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                >
+                  Supprimer
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Template Manager Modal */}
+      {showTemplateManager && (
+        <MessageTemplateManager
+          onSelectTemplate={handleSelectTemplate}
+          onClose={() => {
+            setShowTemplateManager(false);
+            setTemplateTargetParticipant(null);
+          }}
+        />
       )}
     </div>
   );

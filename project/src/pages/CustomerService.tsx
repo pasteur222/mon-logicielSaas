@@ -10,6 +10,7 @@ import ChatbotHealthMonitor from '../components/ChatbotHealthMonitor';
 import ConversationList from '../components/ConversationList';
 import { processConversationsIntoThreads, getConversationAnalytics } from '../lib/conversation-utils';
 import { subscribeToModuleUpdates, ensureConversationSync } from '../lib/chatbot-communication';
+import MessageTemplateManager from '../components/MessageTemplateManager';
 import { 
   processCustomerServiceMessage, 
   getCustomerServiceHistory,
@@ -77,6 +78,7 @@ const CustomerService = () => {
   const [deletingConversations, setDeletingConversations] = useState(false);
   const [showDeleteOptions, setShowDeleteOptions] = useState(false);
   const [deleteTimeframe, setDeleteTimeframe] = useState<'1h' | '24h' | '7d' | 'all'>('24h');
+  const [showTemplateManager, setShowTemplateManager] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -265,8 +267,33 @@ const CustomerService = () => {
   };
 
   const handleDeleteSelectedConversations = async () => {
-    // Implementation moved to ConversationList component
-    setError('Fonctionnalité déplacée vers la nouvelle interface de conversations');
+    try {
+      if (selectedConversations.length === 0) {
+        setError('Aucune conversation sélectionnée');
+        return;
+      }
+
+      console.log('🗑️ [CUSTOMER-SERVICE-UI] Starting deletion of selected conversations:', selectedConversations);
+
+      const result = await deleteCustomerServiceConversations(selectedConversations);
+      if (result.success) {
+        setSuccess(`${result.deletedCount} conversation(s) supprimée(s) avec succès`);
+        setSelectedConversations([]);
+        
+        console.log('✅ [CUSTOMER-SERVICE-UI] Deletion successful, refreshing conversation list');
+        
+        // Force immediate refresh of conversations list
+        await loadConversations();
+        
+        setTimeout(() => setSuccess(null), 3000);
+      } else {
+        console.error('❌ [CUSTOMER-SERVICE-UI] Deletion failed:', result.error);
+        setError(result.error || 'Erreur lors de la suppression');
+      }
+    } catch (error) {
+      console.error('Error deleting selected conversations:', error);
+      setError('Erreur lors de la suppression des conversations');
+    }
   };
 
   const handleDeleteRecentConversations = async () => {
@@ -285,6 +312,8 @@ const CustomerService = () => {
         return;
       }
 
+      console.log('🗑️ [CUSTOMER-SERVICE-UI] Starting timeframe deletion:', deleteTimeframe);
+
       // Use the dedicated deletion function
       const result = await deleteCustomerServiceConversationsByTimeframe(deleteTimeframe);
       
@@ -292,13 +321,10 @@ const CustomerService = () => {
         throw new Error(result.error || 'Deletion failed');
       }
       
-      // Update local state immediately to reflect deletion
-      if (deleteTimeframe === 'all') {
-        setConversations([]);
-      } else {
-        // Reload conversations to get the updated list
-        await loadConversations();
-      }
+      console.log('✅ [CUSTOMER-SERVICE-UI] Timeframe deletion successful, refreshing conversation list');
+      
+      // Always reload conversations to get the updated list
+      await loadConversations();
       
       setSuccess(`${result.deletedCount} conversation(s) supprimée(s) avec succès`);
       setShowDeleteOptions(false);
@@ -379,6 +405,13 @@ const CustomerService = () => {
     }
   };
 
+  const handleSelectTemplate = (template: any) => {
+    setManualMessage(template.content);
+    setShowTemplateManager(false);
+    setSuccess('Template inséré dans le message');
+    setTimeout(() => setSuccess(null), 3000);
+  };
+
   const getUniqueParticipants = () => {
     const participants = new Set<string>();
     conversations.forEach(conv => {
@@ -432,11 +465,11 @@ const CustomerService = () => {
                   Intégration Chatbot Web
                 </button>
                 <button
-                  onClick={() => setShowDeleteOptions(true)}
+                  onClick={() => setShowRuleEditor(true)}
                   className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
                 >
-                  <Trash2 className="w-4 h-4" />
-                  Supprimer Conversations
+                  <Plus className="w-4 h-4" />
+                  Nouvelle Règle
                 </button>
                 <button
                   onClick={() => setShowRuleEditor(true)}
@@ -553,6 +586,15 @@ const CustomerService = () => {
                         }
                       }}
                     />
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setShowTemplateManager(true)}
+                        className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                      >
+                        <MessageSquare className="w-4 h-4" />
+                        Insérer un template
+                      </button>
+                    </div>
                     <div className="flex justify-between items-center">
                       <p className="text-sm text-gray-500">
                         Appuyez sur Entrée pour envoyer, Shift + Entrée pour une nouvelle ligne
@@ -645,6 +687,29 @@ const CustomerService = () => {
               onSendMessage={handleSendManualMessage}
               onRefresh={loadConversations}
               loading={loading}
+              onDeleteConversations={async (conversationIds) => {
+                try {
+                  console.log('🗑️ [CUSTOMER-SERVICE-UI] ConversationList deletion request:', conversationIds);
+                  
+                  const result = await deleteCustomerServiceConversations(conversationIds);
+                  if (result.success) {
+                    setSuccess(`${result.deletedCount} conversation(s) supprimée(s) avec succès`);
+                    
+                    console.log('✅ [CUSTOMER-SERVICE-UI] ConversationList deletion successful, refreshing');
+                    
+                    // Force immediate refresh of conversations list
+                    await loadConversations();
+                    
+                    setTimeout(() => setSuccess(null), 3000);
+                  } else {
+                    console.error('❌ [CUSTOMER-SERVICE-UI] ConversationList deletion failed:', result.error);
+                    setError(result.error || 'Erreur lors de la suppression');
+                  }
+                } catch (error) {
+                  console.error('Error deleting conversations:', error);
+                  setError('Erreur lors de la suppression des conversations');
+                }
+              }}
             />
           </div>
         </div>
@@ -835,6 +900,14 @@ const CustomerService = () => {
             <ChatbotWebIntegration onClose={() => setShowWebChatbot(false)} />
           </div>
         </div>
+      )}
+
+      {/* Template Manager Modal */}
+      {showTemplateManager && (
+        <MessageTemplateManager
+          onSelectTemplate={handleSelectTemplate}
+          onClose={() => setShowTemplateManager(false)}
+        />
       )}
     </div>
   );
