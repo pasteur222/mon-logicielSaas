@@ -31,7 +31,7 @@ ChartJS.register(
 );
 
 interface DashboardChartsProps {
-  moduleType: 'whatsapp' | '' | 'customerService' | 'quiz';
+  moduleType: 'whatsapp' | 'customerService' | 'quiz';
 }
 
 const DashboardCharts: React.FC<DashboardChartsProps> = ({ moduleType }) => {
@@ -85,9 +85,6 @@ const DashboardCharts: React.FC<DashboardChartsProps> = ({ moduleType }) => {
       switch (moduleType) {
         case 'whatsapp':
           await loadWhatsAppData();
-          break;
-        case 'education':
-          await loadEducationData();
           break;
         case 'customerService':
           await loadCustomerServiceData();
@@ -197,9 +194,6 @@ const DashboardCharts: React.FC<DashboardChartsProps> = ({ moduleType }) => {
       ]
     });
   };
-
-  const loadEducationData = async () => {
-  }
 
   const loadCustomerServiceData = async () => {
     // Generate last 7 days for labels
@@ -429,7 +423,6 @@ const DashboardCharts: React.FC<DashboardChartsProps> = ({ moduleType }) => {
         <div className="bg-white p-4 rounded-lg shadow-sm">
           <h3 className="text-lg font-medium text-gray-900 mb-4">
             {moduleType === 'whatsapp' && 'Volume de messages'}
-            {moduleType === '' && 'Sessions d\'apprentissage'}
             {moduleType === 'customerService' && 'Volume de tickets'}
             {moduleType === 'quiz' && 'Participation au quiz'}
           </h3>
@@ -460,7 +453,6 @@ const DashboardCharts: React.FC<DashboardChartsProps> = ({ moduleType }) => {
         <div className="bg-white p-4 rounded-lg shadow-sm">
           <h3 className="text-lg font-medium text-gray-900 mb-4">
             {moduleType === 'whatsapp' && 'Distribution des messages'}
-            {moduleType === '' && 'Distribution des matières'}
             {moduleType === 'customerService' && 'Distribution of Messages'}
             {moduleType === 'quiz' && 'Segmentation des Utilisateurs'}
           </h3>
@@ -486,7 +478,6 @@ const DashboardCharts: React.FC<DashboardChartsProps> = ({ moduleType }) => {
       <div className="bg-white p-4 rounded-lg shadow-sm">
         <h3 className="text-lg font-medium text-gray-900 mb-4">
           {moduleType === 'whatsapp' && 'Statut des messages'}
-          {moduleType === '' && 'Performance des clients'}
           {moduleType === 'customerService' && 'Temps de réponse'}
           {moduleType === 'quiz' && 'Métriques d\'Engagement Marketing'}
         </h3>

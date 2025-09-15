@@ -1,5 +1,5 @@
 import React from 'react';
-import { MessageSquare, Bot, Brain, BookOpen, GamepadIcon, ChevronRight, Shield, Zap, Award, Users, BarChart2, Clock, Filter, Briefcase, Smartphone, RefreshCw, Send } from 'lucide-react';
+import { MessageSquare, Bot, GamepadIcon, ChevronRight, Shield, Zap, Award, Users, BarChart2, Clock, Filter, Briefcase, Smartphone, RefreshCw, Send } from 'lucide-react';
 import BackButton from '../components/BackButton';
 
 const Features = () => {
@@ -28,7 +28,6 @@ const Features = () => {
       ],
       color: 'green'
     },
-    
     {
       title: 'Quiz Engageants',
       icon: GamepadIcon,

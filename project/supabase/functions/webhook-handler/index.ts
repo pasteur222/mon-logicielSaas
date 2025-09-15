@@ -4,6 +4,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { createGroqClient } from "../_shared/groq-client.ts";
+import { determineChatbotTypeFromMessage, checkActiveQuizSession } from "../_shared/chatbot-utils.ts";
 
 
 // Define CORS headers
@@ -102,7 +103,11 @@ serve(async (req) => {
     }
 
     // Determine chatbot type from message content
-    const chatbotType = determineChatbotType(messageData.text);
+    const chatbotType = await determineChatbotTypeFromMessage(
+      messageData.text,
+      'whatsapp',
+      messageData.from
+    );
 
     // Get a system-wide Groq client that doesn't depend on a specific user
     const groq = await getSystemGroqClient();
@@ -231,49 +236,45 @@ serve(async (req) => {
 });
 
 /**
- * Determine which chatbot should handle the message based on content analysis
+ * Determine which chatbot should handle the message based on session status and content
  * @param message The message text to analyze
+ * @param source The source of the message
+ * @param phoneNumber The phone number for WhatsApp messages
  * @returns The chatbot type: 'client', 'education', or 'quiz'
  */
-function determineChatbotType(message: string): string {
-  const lowerMessage = message.toLowerCase();
-  
-  // Handle direct chatbot type mentions
-  if (lowerMessage === 'client' || lowerMessage === 'service client') {
+async function determineChatbotTypeFromMessage(
+  message: string,
+  source: 'whatsapp' | 'web',
+  phoneNumber?: string
+): Promise<string> {
+  // For web messages, always use customer service
+  if (source === 'web') {
     return 'client';
   }
-  if (lowerMessage === 'education') {
-    return 'education';
+
+  // For WhatsApp messages, check for active quiz session first
+  if (source === 'whatsapp' && phoneNumber) {
+    const hasActiveQuizSession = await checkActiveQuizSession(phoneNumber);
+    
+    if (hasActiveQuizSession) {
+      return 'quiz';
+    }
   }
-  if (lowerMessage === 'quiz') {
-    return 'quiz';
-  }
+
+  const lowerMessage = message.toLowerCase();
   
-  // Education keywords
-  const educationKeywords = [
-    'learn', 'study', 'course', 'education', 'school', 'homework', 
-    'assignment', 'question', 'apprendre', 'étudier', 'cours', 'éducation', 
-    'école', 'devoir', 'exercice'
-  ];
-  
-  // Quiz keywords
+  // Check for quiz keywords
   const quizKeywords = [
     'quiz', 'game', 'test', 'play', 'challenge', 'question', 'answer',
     'jeu', 'défi', 'réponse', 'questionnaire'
   ];
   
-  // Check for education keywords
-  if (educationKeywords.some(keyword => lowerMessage.includes(keyword))) {
-    return 'education';
-  }
-  
-  // Check for quiz keywords
   if (quizKeywords.some(keyword => lowerMessage.includes(keyword))) {
     return 'quiz';
   }
   
-  // Default to education if no match found (changed from client to ensure compatibility)
-  return 'education';
+  // Default to customer service for all other cases
+  return 'client';
 }
 
 /**
@@ -283,12 +284,6 @@ function determineChatbotType(message: string): string {
  */
 function getChatbotSystemPrompt(chatbotType: string): string {
   switch (chatbotType) {
-    case 'education':
-      return `You are an educational assistant specialized in helping students with their studies.
-Your goal is to provide clear, accurate explanations and guide students through their learning process.
-Be patient, encouraging, and adapt your explanations to different learning styles.
-Provide step-by-step solutions when appropriate and ask clarifying questions if needed.`;
-    
     case 'quiz':
       return `You are a quiz master who creates engaging educational quizzes.
 Your goal is to make learning fun through interactive questions and challenges.
@@ -296,10 +291,12 @@ Be enthusiastic, encouraging, and provide informative feedback on answers.
 Keep track of scores and progress, and adapt difficulty based on performance.`;
     
     default: // client support
-      return `You are a customer service assistant for a telecom company.
+      return `You are a customer service assistant for Airtel GPT.
 Your goal is to help customers with their inquiries, issues, and requests.
 Be professional, courteous, and solution-oriented.
 Provide clear instructions and ask for clarification when needed.
-If you cannot resolve an issue, offer to escalate it to a human agent.`;
+If you cannot resolve an issue, offer to escalate it to a human agent.
+Always respond in French unless the customer writes in another language.
+Keep your responses concise but complete (maximum 500 words).`;
   }
 }

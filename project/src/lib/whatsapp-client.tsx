@@ -1,6 +1,5 @@
 import { supabase } from './supabase';
-import { checkSubscriptionStatus } from './subscription';
-import { determineChatbotType } from './chatbot-router';
+import { determineChatbotType, trackChatbotUsage } from './chatbot-router';
 
 // Define the webhook endpoint for processing messages
 const WEBHOOK_ENDPOINT = 'https://webhook-telecombusiness.onrender.com/webhook';
@@ -179,6 +178,8 @@ export async function handleIncomingMessage(message: WhatsAppMessage) {
       return;
     }
 
+    console.log('📨 [WHATSAPP-CLIENT] Processing incoming message from:', message.from);
+
     // Save incoming message
     await supabase.from('customer_conversations').insert({
       phone_number: message.from,
@@ -186,6 +187,18 @@ export async function handleIncomingMessage(message: WhatsAppMessage) {
       sender: 'user',
       created_at: new Date(message.timestamp).toISOString()
     });
+
+    // Determine which chatbot should handle this message
+    const chatbotType = await determineChatbotType(
+      message.text.body,
+      'whatsapp',
+      message.from
+    );
+
+    console.log(`🤖 [WHATSAPP-CLIENT] Routing to ${chatbotType} chatbot`);
+
+    // Track chatbot usage
+    await trackChatbotUsage(message.from, undefined, chatbotType);
 
     // Forward message to webhook for processing
     try {
@@ -214,44 +227,16 @@ export async function handleIncomingMessage(message: WhatsAppMessage) {
       console.error('Error sending message to webhook:', error);
     }
 
-    // Determine which chatbot should handle this message
-    const moduleType = await determineChatbotType(message.text.body);
+    // Send welcome message based on chatbot type
+    let welcomeMessage = '';
     
-    // If not a trigger message and no active session, send help message
-    if (!moduleType && !await hasActiveSession(message.from)) {
-      await sendWhatsAppResponse(message.from, 
-        "Welcome! To start, please send one of these messages:\n" +
-        "- 'I want to learn' for education\n" +
-        "- 'Customer Service' for support\n" +
-        "- 'Game' to play quiz"
-      );
-      return;
+    if (chatbotType === 'quiz') {
+      welcomeMessage = "Bienvenue au Quiz! Êtes-vous prêt à tester vos connaissances?";
+    } else {
+      welcomeMessage = "Bienvenue au Service Client! Comment puis-je vous aider aujourd'hui?";
     }
-
-    // Handle module-specific trigger messages
-    if (moduleType) {
-      // Start module session (always grant access)
-      await startModuleSession(message.from, moduleType);
-      return;
-    }
-
-    // Handle ongoing session
-    const activeSession = await getActiveSession(message.from);
-    if (!activeSession) return;
-
-    switch (activeSession.type) {
-      case 'EDUCATION':
-        await handleEducationMessage(message);
-        break;
-        
-      case 'CUSTOMER_SERVICE':
-        await handleCustomerServiceMessage(message);
-        break;
-        
-      case 'QUIZ':
-        await handleQuizMessage(message);
-        break;
-    }
+    
+    await sendWhatsAppResponse(message.from, welcomeMessage);
 
   } catch (error) {
     console.error('Error handling incoming message:', error);
@@ -259,163 +244,6 @@ export async function handleIncomingMessage(message: WhatsAppMessage) {
   }
 }
 
-// Convert chatbot type to module type
-function getModuleType(message: string): Promise<string | null> {
-  return determineChatbotType(message)
-    .then(chatbotType => {
-      switch(chatbotType) {
-        case 'education': return 'EDUCATION';
-        case 'client': return 'CUSTOMER_SERVICE';
-        case 'quiz': return 'QUIZ';
-        default: return null;
-      }
-    })
-    .catch(error => {
-      console.error('Error determining module type:', error);
-      return null;
-    });
-}
-
-async function hasActiveSession(phoneNumber: string): Promise<boolean> {
-  try {
-    const { data } = await supabase
-      .from('education_sessions')
-      .select('id')
-      .eq('phone_number', phoneNumber)
-      .is('end_time', null)
-      .maybeSingle();
-
-    return !!data;
-  } catch (error) {
-    console.error('Error checking active session:', error);
-    return false;
-  }
-}
-
-async function getActiveSession(phoneNumber: string) {
-  const { data: educationSession } = await supabase
-    .from('education_sessions')
-    .select('*')
-    .eq('phone_number', phoneNumber)
-    .is('end_time', null)
-    .maybeSingle();
-
-  if (educationSession) {
-    return { type: 'EDUCATION', session: educationSession };
-  }
-
-  // Check other session types similarly...
-  return null;
-}
-
-async function endSession(sessionId: string) {
-  await supabase
-    .from('education_sessions')
-    .update({
-      end_time: new Date().toISOString()
-    })
-    .eq('id', sessionId);
-}
-
-async function startModuleSession(phoneNumber: string, moduleType: string) {
-  let welcomeMessage = '';
-
-  switch (moduleType) {
-    case 'EDUCATION':
-      // Get student profile
-      const { data: student } = await supabase
-        .from('student_profiles')
-        .select('id')
-        .eq('phone_number', phoneNumber)
-        .maybeSingle();
-        
-      if (student) {
-        await supabase.from('education_sessions').insert({
-          student_id: student.id,
-          phone_number: phoneNumber,
-          subject: 'general',
-          start_time: new Date().toISOString()
-        });
-      }
-      
-      welcomeMessage = "Bienvenue dans le module Éducation! Quelle matière souhaitez-vous étudier? Vous pouvez aussi m'envoyer une image d'un problème ou d'un exercice pour que je puisse vous aider.";
-      break;
-
-    case 'CUSTOMER_SERVICE':
-      welcomeMessage = "Bienvenue au Service Client! Comment puis-je vous aider aujourd'hui?";
-      break;
-
-    case 'QUIZ':
-      welcomeMessage = "Bienvenue au Quiz! Êtes-vous prêt à tester vos connaissances?";
-      break;
-  }
-
-  await sendWhatsAppResponse(phoneNumber, welcomeMessage);
-}
-
-async function handleEducationMessage(phoneNumber: string, message: string) {
-  try {
-    // Get student profile
-    const { data: student } = await supabase
-      .from('student_profiles')
-      .select('*')
-      .eq('phone_number', phoneNumber)
-      .single();
-
-    if (!student) {
-      await sendWhatsAppResponse(phoneNumber, "Votre profil étudiant n'a pas été trouvé. Veuillez contacter le support.");
-      return;
-    }
-
-    // Analyze message
-    const completion = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${import.meta.env.VITE_GROQ_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: "mixtral-8x7b-32768",
-        messages: [
-          {
-            role: "system",
-            content: `You are a teacher for ${student.level} students. Your goal is to help the student understand and progress.`
-          },
-          { role: "user", content: message }
-        ],
-        temperature: 0.7,
-        max_tokens: 2048
-      })
-    });
-
-    const result = await completion.json();
-    const response = result.choices[0]?.message?.content || "Je suis désolé, je n'ai pas pu générer une réponse appropriée.";
-
-    // Save bot response
-    await supabase.from('customer_conversations').insert({
-      phone_number: phoneNumber,
-      content: response,
-      sender: 'bot',
-      created_at: new Date().toISOString()
-    });
-
-    // Send response
-    await sendWhatsAppResponse(phoneNumber, response);
-  } catch (error) {
-    console.error('Error handling education message:', error);
-    await sendWhatsAppResponse(phoneNumber, "Désolé, je rencontre des difficultés techniques. Veuillez réessayer plus tard.");
-  }
-}
-
-async function handleCustomerServiceMessage(phoneNumber: string, message: string) {
-  // Implement customer service logic
-  await sendWhatsAppResponse(phoneNumber, "Merci pour votre message au service client. Un agent vous répondra bientôt.");
-}
-
-async function handleQuizMessage(phoneNumber: string, message: string) {
-  // Implement quiz logic
-  await sendWhatsAppResponse(phoneNumber, "Votre réponse au quiz a été enregistrée.");
-}
 
 export async function sendWhatsAppResponse(to: string, message: string, media?: { type: 'image' | 'video' | 'document'; url: string }, userId?: string) {
   try {

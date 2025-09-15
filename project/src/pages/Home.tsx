@@ -177,9 +177,9 @@ const Home = () => {
                 color: 'green'
               },
               {
-                icon: BookOpen,
-                title: 'Service Client Intelligent',
-                description: 'Un assistant virtuel disponible 24/7',
+                icon: GamepadIcon,
+                title: 'Quiz Marketing Interactif',
+                description: 'Engagez votre audience avec des quiz personnalisés',
                 path: '/features',
                 color: 'yellow'
               }

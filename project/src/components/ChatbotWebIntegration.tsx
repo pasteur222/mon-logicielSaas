@@ -196,8 +196,7 @@ const ChatbotWebIntegration: React.FC<ChatbotWebIntegrationProps> = ({ onClose }
         a.download = 'airtel-chatbot-widget.js';
         document.body.appendChild(a);
         a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        text: 'Test connection'
       })
       .catch(error => {
         console.error('Error downloading script:', error);

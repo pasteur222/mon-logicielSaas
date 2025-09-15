@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Users, MessageSquare, BookOpen, Brain, Trophy, Clock, BarChart2, Calendar, CheckCircle, XCircle, Gauge, CreditCard } from 'lucide-react';
+import { Activity, Users, MessageSquare, Trophy, Clock, BarChart2, Calendar, CheckCircle, XCircle, Gauge, CreditCard } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -13,12 +13,6 @@ interface DashboardStats {
     totalMessages: number;
     deliveryRate: number;
     activeChats: number;
-  };
-  education: {
-    activeStudents: number;
-    totalSessions: number;
-    averageScore: number;
-    subjectDistribution: Record<string, number>;
   };
   customerService: {
     totalTickets: number;
@@ -48,7 +42,6 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const [stats, setStats] = useState<DashboardStats>({
     whatsapp: { totalMessages: 0, deliveryRate: 0, activeChats: 0 },
-    education: { activeStudents: 0, totalSessions: 0, averageScore: 0, subjectDistribution: {} },
     customerService: { totalTickets: 0, responseTime: 0, satisfactionRate: 0, commonTopics: [] },
     quiz: { activeGames: 0, totalParticipants: 0, averageScore: 0, completionRate: 0, profileBreakdown: { discovery: 0, active: 0, vip: 0 } }
   });
@@ -120,15 +113,6 @@ const Dashboard = () => {
         .limit(1)
         .maybeSingle();
 
-      // Education Stats
-      const { data: educationSessions } = await supabase
-        .from('education_sessions')
-        .select('*');
-
-      const { data: students } = await supabase
-        .from('student_profiles')
-        .select('*');
-
       // Quiz Stats
       const { data: quizGames } = await supabase
         .from('quiz_games')
@@ -151,14 +135,8 @@ const Dashboard = () => {
           deliveryRate: calculateDeliveryRate(whatsappMessages || []),
           activeChats: calculateActiveChats(whatsappMessages || [])
         },
-        education: {
-          activeStudents: students?.length || 0,
-          totalSessions: educationSessions?.length || 0,
-          averageScore: calculateAverageScore(educationSessions || []),
-          subjectDistribution: calculateSubjectDistribution(educationSessions || [])
-        },
         customerService: {
-          totalTickets: (customerMessages?.length || 0) + (students?.length || 0), // Include client data
+          totalTickets: customerMessages?.length || 0,
           responseTime: calculateAverageResponseTime(customerMessages || []),
           satisfactionRate: 85, // À implémenter: calcul réel
           commonTopics: calculateCommonTopics(customerMessages || [])
@@ -220,15 +198,6 @@ const Dashboard = () => {
     if (sessions.length === 0) return 0;
     const totalScore = sessions.reduce((acc, session) => acc + (session.comprehension_score || 0), 0);
     return (totalScore / sessions.length) * 100;
-  };
-
-  const calculateSubjectDistribution = (sessions: any[]) => {
-    return sessions.reduce((acc: Record<string, number>, session) => {
-      if (session.subject) {
-        acc[session.subject] = (acc[session.subject] || 0) + 1;
-      }
-      return acc;
-    }, {});
   };
 
   const calculateAverageResponseTime = (messages: any[]) => {
@@ -404,8 +373,6 @@ const Dashboard = () => {
           </div>
         </div>
       )}
-
-      {/* Éducation */}
 
       {/* Service Client */}
       {activeModule === 'customerService' && (

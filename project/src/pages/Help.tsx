@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Book, MessageSquare, Bot, GamepadIcon, Filter, Shield, ChevronDown, ChevronRight, Search, Briefcase, BookOpen, BarChart2, Settings, Clock, Smartphone, Send, Users, Database, Layout, CreditCard } from 'lucide-react';
+import { MessageSquare, Bot, GamepadIcon, Filter, Shield, ChevronDown, ChevronRight, Search, Briefcase, BarChart2, Settings, Clock, Smartphone, Send, Users, Database, Layout, CreditCard } from 'lucide-react';
 import BackButton from '../components/BackButton';
 
 const Help = () => {
@@ -158,7 +158,6 @@ Le système utilisera l'IA pour faire correspondre les messages entrants avec l'
         }
       ]
     },
-   
     {
       id: 'quiz',
       title: 'Quiz et Sondages',

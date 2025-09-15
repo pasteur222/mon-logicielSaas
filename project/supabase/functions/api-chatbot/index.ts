@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { createGroqClient } from "../_shared/groq-client.ts";
+import { determineChatbotTypeFromMessage } from "../_shared/chatbot-utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -14,7 +15,7 @@ interface ChatbotRequest {
   sessionId?: string;
   source: 'web' | 'whatsapp';
   text: string;
-  chatbotType: 'client' | 'education' | 'quiz';
+  chatbotType?: 'client' | 'quiz'; // Made optional since we'll determine it
   userAgent?: string;
   timestamp?: string;
 }
@@ -122,22 +123,14 @@ serve(async (req: Request): Promise<Response> => {
       );
     }
 
-    if (!requestData.chatbotType || !['client', 'education', 'quiz'].includes(requestData.chatbotType)) {
-      console.error('❌ [API-CHATBOT] Invalid chatbotType field:', requestData.chatbotType);
-      return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: 'ChatbotType must be "client", "education", or "quiz"' 
-        }),
-        { 
-          status: 400,
-          headers: { 
-            'Content-Type': 'application/json',
-            ...corsHeaders
-          }
-        }
-      );
-    }
+    // Determine chatbot type based on new routing logic
+    const chatbotType = await determineChatbotTypeFromMessage(
+      requestData.text,
+      requestData.source,
+      requestData.phoneNumber
+    );
+    
+    console.log(`🤖 [API-CHATBOT] Determined chatbot type: ${chatbotType}`);
 
     // Validate text length
     if (requestData.text.length > 4000) {
@@ -191,7 +184,7 @@ serve(async (req: Request): Promise<Response> => {
         source: requestData.source,
         content: requestData.text,
         sender: 'user',
-        intent: requestData.chatbotType,
+        intent: chatbotType,
         user_agent: requestData.userAgent,
         created_at: requestData.timestamp || new Date().toISOString()
       })
@@ -229,14 +222,7 @@ serve(async (req: Request): Promise<Response> => {
 
     // Generate system prompt based on chatbot type
     let systemPrompt = '';
-    switch (requestData.chatbotType) {
-      case 'education':
-        systemPrompt = `Vous êtes un assistant éducatif spécialisé dans l'aide aux étudiants.
-Votre objectif est de fournir des explications claires et précises pour aider les étudiants dans leur apprentissage.
-Soyez patient, encourageant et adaptez vos explications aux différents styles d'apprentissage.
-Fournissez des solutions étape par étape quand c'est approprié.
-${requestData.source === 'web' ? 'L\'étudiant vous contacte via le site web.' : 'L\'étudiant vous contacte via WhatsApp.'}`;
-        break;
+    switch (chatbotType) {
       case 'quiz':
         systemPrompt = `Vous êtes un maître de quiz qui crée des quiz éducatifs engageants.
 Votre objectif est de rendre l'apprentissage amusant grâce à des questions et défis interactifs.
@@ -303,7 +289,7 @@ ${requestData.source === 'web' ? 'Le client vous contacte via le site web.' : 'L
         source: requestData.source,
         content: sanitizedResponse,
         sender: 'bot',
-        intent: requestData.chatbotType,
+        intent: chatbotType,
         response_time: responseTime,
         created_at: new Date().toISOString()
       })
@@ -341,8 +327,7 @@ ${requestData.source === 'web' ? 'Le client vous contacte via le site web.' : 'L
     console.error('❌ [API-CHATBOT] Critical error:', {
       message: error.message,
       stack: error.stack,
-      source: requestData?.source,
-      chatbotType: requestData?.chatbotType
+      source: requestData?.source
     });
     
     // Return error response

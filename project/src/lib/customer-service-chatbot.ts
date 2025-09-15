@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { createGroqClient } from './groq-config';
 import { saveConversationMessage, ensureConversationSync, triggerModuleUpdate } from './chatbot-communication';
+import { checkAutoReplyRules, processAutoReplyResponse } from './auto-reply-engine';
 
 interface CustomerServiceMessage {
   phoneNumber?: string;
@@ -56,6 +57,21 @@ export async function processCustomerServiceMessage(message: CustomerServiceMess
       });
     }
 
+    // Check for auto-reply rules first (only for authenticated users)
+    let autoReplyResponse = null;
+    if (message.phoneNumber) {
+      // Get user ID from phone number
+      const { data: userProfile } = await supabase
+        .from('profils_utilisateurs')
+        .select('id')
+        .eq('phone_number', message.phoneNumber)
+        .maybeSingle();
+      
+      if (userProfile) {
+        autoReplyResponse = await checkAutoReplyRules(message.content, userProfile.id);
+      }
+    }
+
     // Get user profile for Groq configuration
     let userId = null;
     
@@ -90,7 +106,41 @@ export async function processCustomerServiceMessage(message: CustomerServiceMess
     // Create Groq client
     const groq = await createGroqClient(userId);
 
-    // Generate response using Groq
+    let response;
+    
+    if (autoReplyResponse) {
+      // Use auto-reply rule response as base, but enhance with AI
+      console.log('🤖 [CUSTOMER-SERVICE] Using auto-reply rule as base');
+      
+      const completion = await groq.chat.completions.create({
+        messages: [
+          {
+            role: "system",
+            content: `Vous êtes un assistant de service client professionnel pour Airtel GPT.
+            Une règle automatique a été déclenchée avec cette réponse: "${autoReplyResponse}"
+            
+            Votre tâche est d'améliorer cette réponse en:
+            1. La rendant plus professionnelle et personnalisée
+            2. Ajoutant des détails pertinents si nécessaire
+            3. Gardant le message principal de la règle automatique
+            4. Adaptant le ton selon le contexte du message utilisateur
+            
+            Répondez toujours en français sauf si le client écrit dans une autre langue.
+            Gardez vos réponses concises mais complètes (maximum 500 mots).
+            ${message.source === 'web' ? 'Le client vous contacte via le site web.' : 'Le client vous contacte via WhatsApp.'}`
+          },
+          { role: "user", content: `Message client: "${message.content}"\nRéponse automatique: "${autoReplyResponse}"` }
+        ],
+        model: 'llama3-70b-8192',
+        temperature: 0.7,
+        max_tokens: 1500,
+      });
+
+      response = completion.choices[0]?.message?.content || autoReplyResponse;
+    } else {
+      // Generate standard AI response
+      console.log('🤖 [CUSTOMER-SERVICE] Generating standard AI response');
+      
     const completion = await groq.chat.completions.create({
       messages: [
         {
@@ -113,6 +163,7 @@ export async function processCustomerServiceMessage(message: CustomerServiceMess
 
     const response = completion.choices[0]?.message?.content || 
       "Je suis désolé, je n'ai pas pu générer une réponse appropriée. Un agent vous contactera bientôt.";
+    }
 
     // Validate and potentially truncate response
     let finalResponse = response;

@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { MessageSquare, BookOpen, GamepadIcon, CreditCard, LayoutDashboard, FilterIcon, Settings, Smartphone } from 'lucide-react';
+import { MessageSquare, GamepadIcon, CreditCard, LayoutDashboard, FilterIcon, Settings } from 'lucide-react';
 import { AuthProvider } from './contexts/AuthContext';
 import { AppSettingsProvider } from './components/AppSettingsContext';
 import { LanguageProvider } from './contexts/LanguageContext';
@@ -12,7 +12,6 @@ import Dashboard from './pages/Dashboard';
 import WhatsApp from './pages/WhatsApp';
 import NumberFiltering from './pages/NumberFiltering';
 import CustomerService from './pages/CustomerService';
-import Education from './pages/Education';
 import Quiz from './pages/Quiz';
 import SettingsPage from './pages/Settings';
 import Payments from './pages/Payments';
