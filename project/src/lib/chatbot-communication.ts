@@ -45,35 +45,78 @@ export interface QuizUser {
  */
 export async function saveConversationMessage(message: ChatbotMessage): Promise<string> {
   try {
-    const { data, error } = await supabase
-      .from('customer_conversations')
-      .insert({
-        phone_number: message.phone_number,
-        web_user_id: message.web_user_id,
-        session_id: message.session_id,
-        source: message.source,
-        content: message.content,
-        sender: message.sender,
-        intent: message.intent,
-        user_agent: message.user_agent,
-        response_time: message.response_time,
-        created_at: message.created_at || new Date().toISOString()
-      })
-      .select('id')
-      .single();
+    console.log('💾 [CHATBOT-COMMUNICATION] Saving conversation message:', {
+      phoneNumber: message.phone_number,
+      webUserId: message.web_user_id,
+      source: message.source, // Preserve source: whatsapp/web
+      sender: message.sender,
+      intent: message.intent,
+      contentLength: message.content?.length || 0
+    });
+
+    // Add timeout protection for database operations
+    const saveWithTimeout = async () => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+      
+      try {
+        const result = await supabase
+          .from('customer_conversations')
+          .insert({
+            phone_number: message.phone_number,
+            web_user_id: message.web_user_id,
+            session_id: message.session_id,
+            source: message.source, // Explicitly preserve source
+            content: message.content,
+            sender: message.sender,
+            intent: message.intent,
+            user_agent: message.user_agent,
+            response_time: message.response_time,
+            created_at: message.created_at || new Date().toISOString()
+          })
+          .select('id')
+          .single();
+        
+        clearTimeout(timeoutId);
+        return result;
+      } catch (error) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+          throw new Error('Database timeout: Message save took too long');
+        }
+        throw error;
+      }
+    };
+    const { data, error } = await saveWithTimeout();
 
     if (error) {
       console.error('Error saving conversation message:', error);
       throw new Error(`Failed to save message: ${error.message}`);
     }
 
-    // Trigger real-time update for connected clients
-    await triggerModuleUpdate('conversations', {
-      action: 'message_added',
+    console.log('✅ [CHATBOT-COMMUNICATION] Message saved successfully:', {
       messageId: data.id,
-      intent: message.intent,
-      source: message.source
+      phoneNumber: message.phone_number,
+      webUserId: message.web_user_id
     });
+
+    // Trigger real-time update for connected clients with timeout protection
+    try {
+      const updateController = new AbortController();
+      const updateTimeoutId = setTimeout(() => updateController.abort(), 5000); // 5 second timeout for updates
+      
+      await triggerModuleUpdate('conversations', {
+        action: 'message_added',
+        messageId: data.id,
+        intent: message.intent,
+        source: message.source
+      });
+      
+      clearTimeout(updateTimeoutId);
+    } catch (updateError) {
+      console.warn('Failed to trigger real-time update (non-critical):', updateError);
+      // Don't throw - message was saved successfully
+    }
 
     return data.id;
   } catch (error) {

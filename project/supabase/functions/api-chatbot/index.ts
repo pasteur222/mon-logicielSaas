@@ -1,3 +1,6 @@
+// Follow this setup guide to integrate the Deno runtime and Supabase functions in your project:
+// https://deno.land/manual/getting_started/setup_your_environment
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { createGroqClient } from "../_shared/groq-client.ts";
@@ -15,7 +18,7 @@ interface ChatbotRequest {
   sessionId?: string;
   source: 'web' | 'whatsapp';
   text: string;
-  chatbotType?: 'client' | 'quiz'; // Made optional since we'll determine it
+  chatbotType?: 'client' | 'quiz';
   userAgent?: string;
   timestamp?: string;
 }
@@ -26,9 +29,12 @@ interface ChatbotResponse {
   error?: string;
   sessionId?: string;
   messageId?: string;
+  source?: string;
 }
 
 serve(async (req: Request): Promise<Response> => {
+  const startTime = Date.now();
+  
   // Handle CORS preflight request
   if (req.method === 'OPTIONS') {
     return new Response(null, {
@@ -123,15 +129,6 @@ serve(async (req: Request): Promise<Response> => {
       );
     }
 
-    // Determine chatbot type based on new routing logic
-    const chatbotType = await determineChatbotTypeFromMessage(
-      requestData.text,
-      requestData.source,
-      requestData.phoneNumber
-    );
-    
-    console.log(`🤖 [API-CHATBOT] Determined chatbot type: ${chatbotType}`);
-
     // Validate text length
     if (requestData.text.length > 4000) {
       console.error('❌ [API-CHATBOT] Text too long:', requestData.text.length);
@@ -173,18 +170,18 @@ serve(async (req: Request): Promise<Response> => {
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Save incoming message to database
-    console.log('💾 [API-CHATBOT] Saving incoming message to database');
+    // Save incoming message to database with EXPLICIT source preservation
+    console.log('💾 [API-CHATBOT] Saving incoming message with source:', requestData.source);
     const { data: savedMessage, error: saveError } = await supabase
       .from('customer_conversations')
       .insert({
         phone_number: requestData.phoneNumber,
         web_user_id: requestData.webUserId,
         session_id: requestData.sessionId,
-        source: requestData.source,
+        source: requestData.source, // PRESERVE ORIGINAL SOURCE
         content: requestData.text,
         sender: 'user',
-        intent: chatbotType,
+        intent: 'client', // Always use client for this endpoint
         user_agent: requestData.userAgent,
         created_at: requestData.timestamp || new Date().toISOString()
       })
@@ -195,42 +192,15 @@ serve(async (req: Request): Promise<Response> => {
       console.error('❌ [API-CHATBOT] Error saving incoming message:', saveError);
       // Continue processing even if save fails
     } else {
-      console.log('✅ [API-CHATBOT] Incoming message saved with ID:', savedMessage?.id);
+      console.log('✅ [API-CHATBOT] Incoming message saved with source:', requestData.source);
     }
 
-    // Get Groq client
-    console.log('🧠 [API-CHATBOT] Creating Groq client');
-    let groq;
-    try {
-      groq = await createGroqClient('system');
-    } catch (groqError) {
-      console.error('❌ [API-CHATBOT] Failed to create Groq client:', groqError);
-      return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: 'AI service temporarily unavailable. Please try again later.' 
-        }),
-        { 
-          status: 503,
-          headers: { 
-            'Content-Type': 'application/json',
-            ...corsHeaders
-          }
-        }
-      );
-    }
+    // Get system-wide Groq client for customer service
+    console.log('🧠 [API-CHATBOT] Creating Groq client for customer service');
+    const groq = await getSystemGroqClient();
 
-    // Generate system prompt based on chatbot type
-    let systemPrompt = '';
-    switch (chatbotType) {
-      case 'quiz':
-        systemPrompt = `Vous êtes un maître de quiz qui crée des quiz éducatifs engageants.
-Votre objectif est de rendre l'apprentissage amusant grâce à des questions et défis interactifs.
-Soyez enthousiaste, encourageant et fournissez des commentaires informatifs.
-${requestData.source === 'web' ? 'L\'utilisateur participe via le site web.' : 'L\'utilisateur participe via WhatsApp.'}`;
-        break;
-      default: // client
-        systemPrompt = `Vous êtes un assistant de service client professionnel pour Airtel GPT.
+    // Generate system prompt based on source
+    const systemPrompt = `Vous êtes un assistant de service client professionnel pour Airtel GPT.
 Votre objectif est d'aider les clients avec leurs demandes, problèmes et questions.
 Soyez professionnel, courtois et orienté solution.
 Fournissez des instructions claires et demandez des clarifications si nécessaire.
@@ -238,7 +208,6 @@ Si vous ne pouvez pas résoudre un problème, proposez de l'escalader vers un ag
 Répondez toujours en français sauf si le client écrit dans une autre langue.
 Gardez vos réponses concises mais complètes (maximum 500 mots).
 ${requestData.source === 'web' ? 'Le client vous contacte via le site web.' : 'Le client vous contacte via WhatsApp.'}`;
-    }
 
     // Generate response using Groq
     console.log('🧠 [API-CHATBOT] Generating AI response');
@@ -278,18 +247,18 @@ ${requestData.source === 'web' ? 'Le client vous contacte via le site web.' : 'L
     const responseTime = (Date.now() - startTime) / 1000;
     console.log(`⏱️ [API-CHATBOT] Response generated in ${responseTime.toFixed(2)}s`);
 
-    // Save bot response to database
-    console.log('💾 [API-CHATBOT] Saving bot response to database');
+    // Save bot response to database with EXPLICIT source preservation
+    console.log('💾 [API-CHATBOT] Saving bot response with source:', requestData.source);
     const { data: savedResponse, error: responseError } = await supabase
       .from('customer_conversations')
       .insert({
         phone_number: requestData.phoneNumber,
         web_user_id: requestData.webUserId,
         session_id: requestData.sessionId,
-        source: requestData.source,
+        source: requestData.source, // PRESERVE ORIGINAL SOURCE
         content: sanitizedResponse,
         sender: 'bot',
-        intent: chatbotType,
+        intent: 'client',
         response_time: responseTime,
         created_at: new Date().toISOString()
       })
@@ -300,18 +269,19 @@ ${requestData.source === 'web' ? 'Le client vous contacte via le site web.' : 'L
       console.error('❌ [API-CHATBOT] Error saving bot response:', responseError);
       // Continue even if save fails
     } else {
-      console.log('✅ [API-CHATBOT] Bot response saved with ID:', savedResponse?.id);
+      console.log('✅ [API-CHATBOT] Bot response saved with source:', requestData.source);
     }
 
-    // Return success response
+    // Return success response with source preservation
     const successResponse: ChatbotResponse = {
       success: true,
       response: sanitizedResponse,
       sessionId: requestData.sessionId,
-      messageId: savedResponse?.id
+      messageId: savedResponse?.id,
+      source: requestData.source // PRESERVE AND RETURN SOURCE
     };
 
-    console.log('✅ [API-CHATBOT] Request processed successfully');
+    console.log('✅ [API-CHATBOT] Request processed successfully with source:', requestData.source);
     return new Response(
       JSON.stringify(successResponse),
       { 
@@ -327,14 +297,15 @@ ${requestData.source === 'web' ? 'Le client vous contacte via le site web.' : 'L
     console.error('❌ [API-CHATBOT] Critical error:', {
       message: error.message,
       stack: error.stack,
-      source: requestData?.source
+      source: requestData?.source || 'unknown'
     });
     
-    // Return error response
+    // Return error response with source preservation
     const errorResponse: ChatbotResponse = {
       success: false,
       error: error.message || 'An unexpected error occurred',
-      sessionId: requestData?.sessionId
+      sessionId: requestData?.sessionId,
+      source: requestData?.source // PRESERVE SOURCE EVEN IN ERROR
     };
 
     return new Response(

@@ -78,32 +78,58 @@ const ChatbotWebIntegration: React.FC<ChatbotWebIntegrationProps> = ({ onClose }
         throw new Error('Utilisateur non authentifié');
       }
 
+      // Prepare config data with timeout protection
       const configData = {
         user_id: user.id,
-        widget_color: config.widget_color,
-        widget_title: config.widget_title,
-        widget_position: config.widget_position,
-        is_active: config.is_active,
-        updated_at: new Date().toISOString()
+        config: {
+          widget_color: config.widget_color || '#E60012',
+          widget_title: config.widget_title || 'Service Client',
+          widget_position: config.widget_position || 'right',
+          is_active: config.is_active !== undefined ? config.is_active : true
+        },
+        is_active: config.is_active !== undefined ? config.is_active : true,
+        created_at: config.id ? undefined : new Date().toISOString()
       };
 
-      if (config.id) {
-        // Update existing config
-        const { error } = await supabase
-          .from('chatbot_widget_config')
-          .update(configData)
-          .eq('id', config.id);
-
-        if (error) throw error;
-      } else {
-        // Insert new config
-        const { data, error } = await supabase
-          .from('chatbot_widget_config')
-          .insert([configData])
-          .select()
-          .single();
-
-        if (error) throw error;
+      // Use a timeout wrapper to prevent gateway timeouts
+      const saveWithTimeout = async () => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+        
+        try {
+          let result;
+          if (config.id) {
+            // Update existing config
+            result = await supabase
+              .from('chatbot_widget_config')
+              .update(configData)
+              .eq('id', config.id)
+              .select()
+              .single();
+          } else {
+            // Insert new config
+            result = await supabase
+              .from('chatbot_widget_config')
+              .insert([configData])
+              .select()
+              .single();
+          }
+          
+          clearTimeout(timeoutId);
+          return result;
+        } catch (error) {
+          clearTimeout(timeoutId);
+          throw error;
+        }
+      };
+      const { data, error } = await saveWithTimeout();
+      
+      if (error) {
+        console.error('Error saving chatbot config:', error);
+        throw new Error(`Failed to save configuration: ${error.message}`);
+      }
+      
+      if (data && !config.id) {
         setConfig(prev => ({ ...prev, id: data.id }));
       }
 
@@ -111,7 +137,11 @@ const ChatbotWebIntegration: React.FC<ChatbotWebIntegrationProps> = ({ onClose }
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
       console.error('Error saving chatbot config:', err);
-      setError('Impossible de sauvegarder la configuration');
+      if (err.name === 'AbortError') {
+        setError('Timeout: La sauvegarde a pris trop de temps. Veuillez réessayer.');
+      } else {
+        setError(`Impossible de sauvegarder la configuration: ${err.message}`);
+      }
     } finally {
       setSaving(false);
     }

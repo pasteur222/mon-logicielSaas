@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { MessageSquare, Phone, Globe, MapPin, User, Clock, ChevronRight, X, Send, Check, FileText } from 'lucide-react';
+import { MessageSquare, Phone, Globe, MapPin, User, Clock, ChevronRight, X, Send, Check, FileText, RefreshCw } from 'lucide-react';
+import { saveConversationMessage } from '../lib/chatbot-communication';
+import { sendManualCustomerServiceMessage } from '../lib/customer-service-chatbot';
 
 interface Message {
   id: string;
@@ -48,6 +50,9 @@ const ConversationThread: React.FC<ConversationThreadProps> = ({
 }) => {
   const [showFullConversation, setShowFullConversation] = useState(false);
   const [replyMessage, setReplyMessage] = useState('');
+  const [sendingReply, setSendingReply] = useState(false);
+  const [replyError, setReplyError] = useState<string | null>(null);
+  const [replySuccess, setReplySuccess] = useState<string | null>(null);
 
   const getStatusColor = () => {
     switch (status) {
@@ -129,11 +134,88 @@ const ConversationThread: React.FC<ConversationThreadProps> = ({
     }
   };
 
-  const handleSendReply = () => {
-    if (replyMessage.trim() && onSendMessage) {
-      onSendMessage(participantId, replyMessage);
-      setReplyMessage('');
-      setShowFullConversation(false);
+  const handleSendReply = async () => {
+    if (!replyMessage.trim()) {
+      setReplyError('Veuillez saisir un message');
+      return;
+    }
+
+    try {
+      setSendingReply(true);
+      setReplyError(null);
+      setReplySuccess(null);
+
+      console.log('📤 [CONVERSATION-THREAD] Sending reply:', {
+        participantId,
+        messageLength: replyMessage.length,
+        participantType
+      });
+
+      // Add timeout protection for message sending
+      const sendWithTimeout = async () => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 25000); // 25 second timeout
+        
+        try {
+          let result;
+          
+          // Check if this is a phone number or web user ID
+          const isPhoneNumber = participantType === 'whatsapp' || participantId.startsWith('+') || /^\d+$/.test(participantId);
+          
+          if (isPhoneNumber && participantInfo.phone_number) {
+            // Send WhatsApp message directly
+            result = await sendManualCustomerServiceMessage(
+              participantInfo.phone_number,
+              replyMessage.trim()
+            );
+          } else {
+            // For web clients, save message directly to database
+            await saveConversationMessage({
+              web_user_id: participantInfo.web_user_id || participantId,
+              source: 'web',
+              content: replyMessage.trim(),
+              sender: 'bot',
+              intent: 'client',
+              created_at: new Date().toISOString()
+            });
+            
+            result = { success: true };
+          }
+          
+          clearTimeout(timeoutId);
+          return { result, isPhoneNumber };
+        } catch (error) {
+          clearTimeout(timeoutId);
+          if (error.name === 'AbortError') {
+            throw new Error('Timeout: L\'envoi du message a pris trop de temps');
+          }
+          throw error;
+        }
+      };
+      const { result, isPhoneNumber } = await sendWithTimeout();
+      
+      if (result.success) {
+        setReplySuccess(isPhoneNumber ? 'Message envoyé via WhatsApp' : 'Message envoyé au client web');
+        setReplyMessage('');
+        
+        // Call the parent callback if provided
+        if (onSendMessage) {
+          onSendMessage(participantId, replyMessage.trim());
+        }
+      } else {
+        throw new Error(result.error || 'Échec de l\'envoi du message');
+      }
+
+      // Clear success message after 3 seconds
+      setTimeout(() => {
+        setReplySuccess(null);
+      }, 3000);
+
+    } catch (error) {
+      console.error('❌ [CONVERSATION-THREAD] Error sending reply:', error);
+      setReplyError(error instanceof Error ? error.message : 'Erreur lors de l\'envoi');
+    } finally {
+      setSendingReply(false);
     }
   };
 
@@ -291,11 +373,24 @@ const ConversationThread: React.FC<ConversationThreadProps> = ({
             {/* Quick Reply */}
             {onSendMessage && (
               <div className="p-4 border-t border-gray-200">
+                {replyError && (
+                  <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+                    {replyError}
+                  </div>
+                )}
+                
+                {replySuccess && (
+                  <div className="mb-3 p-2 bg-green-50 border border-green-200 rounded text-green-700 text-sm">
+                    {replySuccess}
+                  </div>
+                )}
+                
                 <div className="flex items-center gap-2 mb-2">
                   {onInsertTemplate && (
                     <button
                       onClick={() => onInsertTemplate(participantId)}
                       className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                      disabled={sendingReply}
                     >
                       <FileText className="w-4 h-4" />
                       Template
@@ -309,18 +404,23 @@ const ConversationThread: React.FC<ConversationThreadProps> = ({
                     onChange={(e) => setReplyMessage(e.target.value)}
                     placeholder="Tapez votre réponse..."
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    disabled={sendingReply}
                     onKeyPress={(e) => {
-                      if (e.key === 'Enter') {
+                      if (e.key === 'Enter' && !sendingReply) {
                         handleSendReply();
                       }
                     }}
                   />
                   <button
                     onClick={handleSendReply}
-                    disabled={!replyMessage.trim()}
+                    disabled={!replyMessage.trim() || sendingReply}
                     className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
                   >
-                    <Send className="w-4 h-4" />
+                    {sendingReply ? (
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Send className="w-4 h-4" />
+                    )}
                   </button>
                 </div>
               </div>

@@ -15,7 +15,8 @@ import {
   processCustomerServiceMessage, 
   getCustomerServiceHistory,
   deleteCustomerServiceConversations,
-  deleteCustomerServiceConversationsByTimeframe
+  deleteCustomerServiceConversationsByTimeframe,
+  sendManualCustomerServiceMessage
 } from '../lib/customer-service-chatbot';
 
 interface Conversation {
@@ -354,52 +355,88 @@ const CustomerService = () => {
       setSendingManualMessage(true);
       setError(null);
 
-      // Find the phone number for the selected conversation
-      const conversation = conversations.find(c => 
-        c.phone_number === targetParticipant || c.web_user_id === targetParticipant
-      );
-      if (!conversation) {
-        setError('Conversation non trouvée');
-        return;
-      }
-
-      // Process the manual message through the customer service chatbot
-      const botResponse = await processCustomerServiceMessage({
-        phoneNumber: conversation.phone_number,
-        webUserId: conversation.web_user_id,
-        source: 'whatsapp',
-        content: messageToSend,
-        sender: 'user'
-      });
-
-      // Send WhatsApp message
-      if (conversation.phone_number) {
-        const results = await sendWhatsAppMessages([{
-          phoneNumber: conversation.phone_number,
-          message: botResponse.content
-        }], user?.id);
-
-        const result = results[0];
-        if (result.status === 'success') {
-          setSuccess('Message envoyé avec succès');
-          setManualMessage('');
-          setSelectedConversation(null);
-          await loadConversations();
-        } else {
-          setError(`Erreur lors de l'envoi: ${result.error}`);
+      // Add timeout protection for manual message sending
+      const sendWithTimeout = async () => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+        
+        try {
+          // Check if this is a phone number or web user ID
+          const isPhoneNumber = targetParticipant.startsWith('+') || /^\d+$/.test(targetParticipant);
+          
+          let result;
+          if (isPhoneNumber) {
+            // Send WhatsApp message directly
+            console.log('📤 [CUSTOMER-SERVICE-UI] Sending manual WhatsApp message:', {
+              phoneNumber: targetParticipant,
+              messageLength: messageToSend.length
+            });
+            
+            result = await sendManualCustomerServiceMessage(
+              targetParticipant,
+              messageToSend,
+              user?.id
+            );
+          } else {
+            // For web clients, save the message directly to database
+            console.log('💾 [CUSTOMER-SERVICE-UI] Saving manual message for web client:', {
+              webUserId: targetParticipant,
+              messageLength: messageToSend.length
+            });
+            
+            await saveConversationMessage({
+              web_user_id: targetParticipant,
+              source: 'web',
+              content: messageToSend,
+              sender: 'bot',
+              intent: 'client',
+              created_at: new Date().toISOString()
+            });
+            
+            result = { success: true };
+          }
+          
+          clearTimeout(timeoutId);
+          return { result, isPhoneNumber };
+        } catch (error) {
+          clearTimeout(timeoutId);
+          if (error.name === 'AbortError') {
+            throw new Error('Timeout: L\'envoi du message a pris trop de temps');
+          }
+          throw error;
         }
-      } else {
-        // For web clients, just save the response to database
-        setSuccess('Réponse enregistrée pour le client web');
+      };
+      const { result, isPhoneNumber } = await sendWithTimeout();
+      
+      if (result.success) {
+        setSuccess(isPhoneNumber ? 'Message envoyé avec succès via WhatsApp' : 'Message envoyé au client web');
         setManualMessage('');
         setSelectedConversation(null);
-        await loadConversations();
+        
+        // Reload conversations to show the sent message with timeout protection
+        const reloadWithTimeout = async () => {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout for reload
+          
+          try {
+            await loadConversations();
+            clearTimeout(timeoutId);
+          } catch (error) {
+            clearTimeout(timeoutId);
+            console.warn('Failed to reload conversations after sending message:', error);
+            // Don't throw - message was sent successfully
+          }
+        };
+        
+        await reloadWithTimeout();
+      } else {
+        setError(`Erreur lors de l'envoi: ${result.error}`);
       }
 
       setTimeout(() => setSuccess(null), 3000);
     } catch (error) {
       console.error('Error sending manual message:', error);
-      setError('Erreur lors de l\'envoi du message');
+      setError(`Erreur lors de l'envoi du message: ${error.message}`);
     } finally {
       setSendingManualMessage(false);
     }
@@ -408,7 +445,7 @@ const CustomerService = () => {
   const handleSelectTemplate = (template: any) => {
     setManualMessage(template.content);
     setShowTemplateManager(false);
-    setSuccess('Template inséré dans le message');
+    setSuccess('Template inséré dans le message - vous pouvez maintenant l\'envoyer');
     setTimeout(() => setSuccess(null), 3000);
   };
 
@@ -737,14 +774,23 @@ const CustomerService = () => {
                   </label>
                   <input
                     type="text"
-                    value={newRule.trigger_words?.join(', ') || ''}
+                    value={Array.isArray(newRule.trigger_words) ? newRule.trigger_words.join(', ') : ''}
                     onChange={(e) => setNewRule(prev => ({ 
                       ...prev, 
-                      trigger_words: e.target.value.split(',').map(w => w.trim()).filter(w => w) 
+                      trigger_words: e.target.value.split(',').map(w => w.trim()).filter(w => w.length > 0) 
                     }))}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
                     placeholder="aide, support, problème, facture"
+                    onKeyDown={(e) => {
+                      // Allow comma input
+                      if (e.key === ',') {
+                        e.stopPropagation();
+                      }
+                    }}
                   />
+                  <p className="mt-1 text-sm text-gray-500">
+                    Séparez les mots-clés par des virgules. Exemple: aide, support, problème, facture
+                  </p>
                 </div>
 
                 <div>

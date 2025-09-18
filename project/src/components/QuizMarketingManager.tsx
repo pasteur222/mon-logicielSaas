@@ -191,6 +191,7 @@ const QuizMarketingManager: React.FC<QuizMarketingManagerProps> = ({ onClose }) 
     try {
       setIsSending(true);
       setError(null);
+      setSuccess(null);
 
       const numbers = phoneNumbers
         .split('\n')
@@ -202,21 +203,44 @@ const QuizMarketingManager: React.FC<QuizMarketingManagerProps> = ({ onClose }) 
         return;
       }
 
-      // Validate phone number format
-      const invalidNumbers = numbers.filter(num => !num.match(/^\+?[1-9]\d{1,14}$/));
+      console.log('🎯 [QUIZ-MARKETING-UI] Starting quiz campaign:', {
+        phoneCount: numbers.length,
+        userId: user?.id
+      });
+
+      // Normalize and validate phone numbers
+      const { normalizePhoneNumber } = await import('../lib/whatsapp');
+      const normalizedNumbers = numbers.map(num => normalizePhoneNumber(num));
+      
+      // Validate phone number format (E.164)
+      const invalidNumbers = normalizedNumbers.filter(num => !num.match(/^\+[1-9]\d{1,14}$/));
       if (invalidNumbers.length > 0) {
-        setError(`Numéros de téléphone invalides: ${invalidNumbers.join(', ')}`);
+        setError(`Numéros de téléphone invalides (format requis: +code pays + numéro): ${invalidNumbers.slice(0, 3).join(', ')}${invalidNumbers.length > 3 ? '...' : ''}`);
         return;
       }
 
-      await sendQuizToNumbers(numbers, user?.id);
-      setSuccess(`Quiz envoyé à ${numbers.length} numéro(s)`);
+      console.log('📋 [QUIZ-MARKETING-UI] Phone numbers validated:', {
+        originalCount: numbers.length,
+        normalizedCount: normalizedNumbers.length,
+        invalidCount: invalidNumbers.length
+      });
+
+      // Send quiz campaign
+      await sendQuizToNumbers(normalizedNumbers, user?.id);
+      
+      console.log('✅ [QUIZ-MARKETING-UI] Quiz campaign completed successfully');
+      setSuccess(`🎉 Quiz envoyé avec succès à ${normalizedNumbers.length} numéro(s)! Les participants recevront l'invitation et pourront commencer le quiz en répondant.`);
       setPhoneNumbers('');
       
       setTimeout(() => setSuccess(null), 3000);
     } catch (error) {
-      console.error('Error sending quiz:', error);
-      setError(error instanceof Error ? error.message : 'Erreur lors de l\'envoi du quiz');
+      console.error('❌ [QUIZ-MARKETING-UI] Quiz campaign failed:', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        phoneCount: phoneNumbers.split('\n').filter(n => n.trim()).length
+      });
+      
+      const errorMessage = error instanceof Error ? error.message : 'Erreur lors de l\'envoi du quiz';
+      setError(`❌ Échec de la campagne: ${errorMessage}`);
     } finally {
       setIsSending(false);
     }
@@ -655,20 +679,50 @@ const QuizMarketingManager: React.FC<QuizMarketingManagerProps> = ({ onClose }) 
           <button
             onClick={handleSendQuiz}
             disabled={isSending || !phoneNumbers.trim() || questions.length === 0}
-            className="w-full flex items-center justify-center gap-3 px-8 py-4 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-xl hover:from-red-700 hover:to-red-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg font-semibold text-lg"
+            className={`w-full flex items-center justify-center gap-3 px-8 py-4 rounded-xl transition-all shadow-lg font-semibold text-lg ${
+              isSending 
+                ? 'bg-gray-400 text-white cursor-not-allowed' 
+                : questions.length === 0 
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : !phoneNumbers.trim()
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-red-600 to-red-700 text-white hover:from-red-700 hover:to-red-800'
+            }`}
           >
             {isSending ? (
               <>
                 <RefreshCw className="w-5 h-5 animate-spin" />
-                Lancement de la campagne...
+                Envoi en cours... ({phoneNumbers.split('\n').filter(n => n.trim()).length} numéros)
               </>
             ) : (
               <>
                 <Send className="w-5 h-5" />
-                {questions.length === 0 ? 'Configurez d\'abord vos questions' : 'Lancer la Campagne Marketing'}
+                {questions.length === 0 
+                  ? 'Configurez d\'abord vos questions' 
+                  : !phoneNumbers.trim()
+                    ? 'Entrez des numéros de téléphone'
+                    : `Lancer la Campagne (${phoneNumbers.split('\n').filter(n => n.trim()).length} numéros)`
+                }
               </>
             )}
           </button>
+          
+          {phoneNumbers.trim() && (
+            <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="text-sm text-blue-800">
+                <strong>Aperçu de la campagne:</strong>
+              </div>
+              <div className="text-sm text-blue-700 mt-1">
+                • {phoneNumbers.split('\n').filter(n => n.trim()).length} destinataires
+              </div>
+              <div className="text-sm text-blue-700">
+                • {questions.length} questions configurées
+              </div>
+              <div className="text-sm text-blue-700">
+                • Les participants recevront une invitation avec instructions
+              </div>
+            </div>
+          )}
         </div>
       )}
 

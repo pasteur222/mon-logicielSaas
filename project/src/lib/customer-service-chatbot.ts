@@ -2,6 +2,7 @@ import { supabase } from './supabase';
 import { createGroqClient } from './groq-config';
 import { saveConversationMessage, ensureConversationSync, triggerModuleUpdate } from './chatbot-communication';
 import { checkAutoReplyRules, processAutoReplyResponse } from './auto-reply-engine';
+import { sendWhatsAppMessages } from './whatsapp';
 
 interface CustomerServiceMessage {
   phoneNumber?: string;
@@ -49,7 +50,7 @@ export async function processCustomerServiceMessage(message: CustomerServiceMess
         phone_number: message.phoneNumber,
         web_user_id: message.webUserId || message.web_user_id,
         session_id: message.sessionId,
-        source: message.source,
+        source: message.source, // Preserve original source (whatsapp/web)
         content: message.content,
         sender: message.sender,
         intent: 'client',
@@ -425,6 +426,92 @@ export async function deleteCustomerServiceConversationsByTimeframe(
       success: false,
       deletedCount: 0,
       error: error instanceof Error ? error.message : 'Unknown error occurred'
+    };
+  }
+}
+
+/**
+ * Send manual message from customer service agent to client
+ */
+export async function sendManualCustomerServiceMessage(
+  phoneNumber: string,
+  message: string,
+  userId?: string
+): Promise<{
+  success: boolean;
+  messageId?: string;
+  error?: string;
+}> {
+  try {
+    console.log('📤 [CUSTOMER-SERVICE] Sending manual message:', {
+      phoneNumber,
+      messageLength: message.length,
+      userId
+    });
+
+    // Validate input
+    if (!phoneNumber || !message.trim()) {
+      throw new Error('Phone number and message are required');
+    }
+
+    if (message.length > 4000) {
+      throw new Error('Message too long (max 4000 characters)');
+    }
+
+    // Add timeout protection for WhatsApp API calls
+    const sendWithTimeout = async () => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+      
+      try {
+        const result = await sendWhatsAppMessages([{
+          phoneNumber,
+          message: message.trim()
+        }], userId);
+        
+        clearTimeout(timeoutId);
+        return result;
+      } catch (error) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+          throw new Error('Request timeout: WhatsApp API took too long to respond');
+        }
+        throw error;
+      }
+    };
+    // Send via WhatsApp
+    const results = await sendWithTimeout();
+
+    const result = results[0];
+    
+    if (result.status === 'success') {
+      // Save the manual message to conversation history
+      await saveConversationMessage({
+        phone_number: phoneNumber,
+        source: 'whatsapp',
+        content: message.trim(),
+        sender: 'bot',
+        intent: 'client',
+        created_at: new Date().toISOString()
+      });
+
+      console.log('✅ [CUSTOMER-SERVICE] Manual message sent successfully:', {
+        phoneNumber,
+        messageId: result.messageId
+      });
+
+      return {
+        success: true,
+        messageId: result.messageId
+      };
+    } else {
+      throw new Error(result.error || 'Failed to send message');
+    }
+  } catch (error) {
+    console.error('❌ [CUSTOMER-SERVICE] Error sending manual message:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred during message sending'
     };
   }
 }

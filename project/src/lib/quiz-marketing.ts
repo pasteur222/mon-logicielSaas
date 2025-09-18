@@ -162,18 +162,112 @@ export async function deleteQuizQuestion(id: number): Promise<void> {
 
 export async function sendQuizToNumbers(phoneNumbers: string[], userId?: string): Promise<void> {
   try {
-    // Implementation for sending quiz to phone numbers
-    console.log('Sending quiz to numbers:', phoneNumbers);
+    console.log('🎯 [QUIZ-MARKETING] Starting quiz campaign to numbers:', {
+      phoneCount: phoneNumbers.length,
+      userId: userId || 'system',
+      numbers: phoneNumbers.slice(0, 3).map(n => n.substring(0, 8) + '***') // Log first 3 numbers (masked)
+    });
+
+    // Validate phone numbers format
+    const invalidNumbers = phoneNumbers.filter(phone => 
+      !phone.match(/^\+[1-9]\d{1,14}$/)
+    );
     
-    // This would integrate with the WhatsApp API to send quiz invitations
-    // For now, we'll just log the action
-    
-    // Track the quiz sending action
-    if (userId) {
-      await trackChatbotUsage(phoneNumbers[0], 'quiz');
+    if (invalidNumbers.length > 0) {
+      throw new Error(`Invalid phone numbers detected: ${invalidNumbers.join(', ')}`);
     }
+
+    // Prepare quiz invitation message
+    const quizInvitationMessage = `🎯 Participez à notre Quiz Marketing Interactif!
+
+Découvrez nos produits et services tout en gagnant des points!
+
+✨ Comment ça marche:
+• Répondez à nos questions simples
+• Gagnez des points selon vos réponses
+• Obtenez votre profil marketing personnalisé
+
+🏆 Profils disponibles:
+• DISCOVERY (0-39 pts): Nouveau prospect
+• ACTIVE (40-79 pts): Client engagé  
+• VIP (80+ pts): Client premium
+
+Tapez "quiz" ou "commencer" pour démarrer!`;
+
+    // Import WhatsApp sending function
+    const { sendWhatsAppMessages } = await import('./whatsapp');
+    
+    // Prepare messages for sending
+    const messagesToSend = phoneNumbers.map(phoneNumber => ({
+      phoneNumber: phoneNumber.trim(),
+      message: quizInvitationMessage
+    }));
+
+    console.log('📤 [QUIZ-MARKETING] Sending quiz invitations via WhatsApp:', {
+      messageCount: messagesToSend.length,
+      messageLength: quizInvitationMessage.length
+    });
+
+    // Send messages via WhatsApp
+    const results = await sendWhatsAppMessages(messagesToSend, userId);
+    
+    // Analyze results
+    const successCount = results.filter(r => r.status === 'success').length;
+    const failureCount = results.filter(r => r.status === 'error').length;
+    const errors = results
+      .filter(r => r.status === 'error')
+      .map(r => r.error)
+      .filter(Boolean);
+
+    console.log('📊 [QUIZ-MARKETING] Quiz campaign results:', {
+      total: results.length,
+      successful: successCount,
+      failed: failureCount,
+      errors: errors.slice(0, 3) // Log first 3 errors
+    });
+
+    // Log individual results for debugging
+    results.forEach((result, index) => {
+      if (result.status === 'success') {
+        console.log(`✅ [QUIZ-MARKETING] Message ${index + 1} sent successfully:`, {
+          phoneNumber: result.phoneNumber.substring(0, 8) + '***',
+          messageId: result.messageId
+        });
+      } else {
+        console.error(`❌ [QUIZ-MARKETING] Message ${index + 1} failed:`, {
+          phoneNumber: result.phoneNumber.substring(0, 8) + '***',
+          error: result.error
+        });
+      }
+    });
+
+    // Throw error if all messages failed
+    if (failureCount === results.length) {
+      throw new Error(`All quiz invitations failed to send. Errors: ${errors.slice(0, 3).join(', ')}`);
+    }
+
+    // Throw error if more than 50% failed
+    if (failureCount > successCount) {
+      throw new Error(`Quiz campaign partially failed: ${successCount} sent, ${failureCount} failed. First errors: ${errors.slice(0, 2).join(', ')}`);
+    }
+    
+    console.log('✅ [QUIZ-MARKETING] Quiz campaign completed successfully:', {
+      successfulSends: successCount,
+      failedSends: failureCount,
+      successRate: `${((successCount / results.length) * 100).toFixed(1)}%`
+    });
+    
+    // Track the quiz campaign action
+    if (userId) {
+      await trackChatbotUsage(phoneNumbers[0], undefined, 'quiz');
+    }
+
   } catch (error) {
-    console.error('Error sending quiz to numbers:', error);
+    console.error('❌ [QUIZ-MARKETING] Critical error in sendQuizToNumbers:', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      phoneCount: phoneNumbers.length,
+      userId
+    });
     throw error;
   }
 }

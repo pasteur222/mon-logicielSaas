@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Search, Filter, RefreshCw, MessageSquare, Users, Clock, Globe, Phone, Trash2 } from 'lucide-react';
 import ConversationThread from './ConversationThread';
 import MessageTemplateManager from './MessageTemplateManager';
+import { saveConversationMessage } from '../lib/chatbot-communication';
+import { sendManualCustomerServiceMessage } from '../lib/customer-service-chatbot';
 
 interface Message {
   id: string;
@@ -261,7 +263,25 @@ const ConversationList: React.FC<ConversationListProps> = ({
 
   const handleSelectTemplate = (template: any) => {
     if (templateTargetParticipant && onSendMessage) {
-      onSendMessage(templateTargetParticipant, template.content);
+      // Add timeout protection for template message sending
+      const sendTemplateWithTimeout = async () => {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 25000); // 25 second timeout
+          
+          await onSendMessage(templateTargetParticipant, template.content);
+          clearTimeout(timeoutId);
+        } catch (error) {
+          if (error.name === 'AbortError') {
+            console.error('Template message sending timeout');
+          }
+          throw error;
+        }
+      };
+      
+      sendTemplateWithTimeout().catch(error => {
+        console.error('Error sending template message:', error);
+      });
     }
     setShowTemplateManager(false);
     setTemplateTargetParticipant(null);

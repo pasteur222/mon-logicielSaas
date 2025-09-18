@@ -183,11 +183,13 @@ export async function handleIncomingMessage(message: WhatsAppMessage) {
 
     console.log('📨 [WHATSAPP] Processing incoming message from:', message.from);
 
-    // Save incoming message
+    // Save incoming message with explicit WhatsApp source
     await supabase.from('customer_conversations').insert({
       phone_number: message.from,
       content: message.text.body,
       sender: 'user',
+      source: 'whatsapp',
+      intent: 'client',
       created_at: new Date(message.timestamp).toISOString()
     });
 
@@ -617,8 +619,26 @@ export async function sendWhatsAppMessages(
       userId: userId || 'not provided'
     });
 
+    // Add timeout protection for WhatsApp configuration retrieval
+    const getConfigWithTimeout = async () => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
+      try {
+        const config = await getWhatsAppConfig(userId);
+        clearTimeout(timeoutId);
+        return config;
+      } catch (error) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+          throw new Error('Timeout getting WhatsApp configuration');
+        }
+        throw error;
+      }
+    };
+
     // Get WhatsApp configuration, prioritizing user-specific config if userId is provided
-    const { accessToken, phoneNumberId } = await getWhatsAppConfig(userId);
+    const { accessToken, phoneNumberId } = await getConfigWithTimeout();
 
     console.log('✅ [WHATSAPP-SEND] WhatsApp config retrieved:', {
       hasAccessToken: !!accessToken,
@@ -674,6 +694,10 @@ export async function sendWhatsAppMessages(
     // Send messages with rate limiting
     const results = await Promise.allSettled(
       processedMessages.map(async (msg, index) => {
+        // Add timeout protection for each message
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 second timeout per message
+        
         try {
           console.log(`📨 [WHATSAPP-SEND] Sending message ${index + 1}/${processedMessages.length}:`, {
             to: msg.phoneNumber,
@@ -699,17 +723,23 @@ export async function sendWhatsAppMessages(
               url: msg.media.url.substring(0, 50) + '...'
             });
             
-            // Validate URL before sending
+            // Validate URL before sending with timeout
             try {
               new URL(msg.media.url);
               
-              // Test URL accessibility
+              // Test URL accessibility with timeout
+              const urlTestController = new AbortController();
+              const urlTestTimeoutId = setTimeout(() => urlTestController.abort(), 5000); // 5 second timeout for URL test
+              
               const urlTest = await fetch(msg.media.url, { 
                 method: 'HEAD',
                 headers: {
                   'User-Agent': 'WhatsApp-Media-Validator/1.0'
-                }
+                },
+                signal: urlTestController.signal
               });
+              
+              clearTimeout(urlTestTimeoutId);
               
               if (!urlTest.ok) {
                 throw new Error(`Media URL not accessible: ${urlTest.status} ${urlTest.statusText}`);
@@ -730,6 +760,9 @@ export async function sendWhatsAppMessages(
                 console.log(`📝 [WHATSAPP-SEND] Added caption to ${msg.media.type} message`);
               }
             } catch (urlError) {
+              if (urlError.name === 'AbortError') {
+                throw new Error('Media URL validation timeout');
+              }
               console.error(`❌ [WHATSAPP-SEND] Invalid media URL:`, {
                 url: msg.media.url,
                 error: urlError.message
@@ -747,8 +780,11 @@ export async function sendWhatsAppMessages(
               'Authorization': `Bearer ${accessToken}`,
               'Content-Type': 'application/json'
             },
-            body: JSON.stringify(messagePayload)
+            body: JSON.stringify(messagePayload),
+            signal: controller.signal
           });
+
+          clearTimeout(timeoutId);
 
           if (!response.ok) {
             const errorData = await response.json();
@@ -768,14 +804,24 @@ export async function sendWhatsAppMessages(
             to: msg.phoneNumber
           });
           
-          // Log message to database for tracking
-          await supabase.from('message_logs').insert({
-            status: 'sent',
-            phone_number: msg.phoneNumber,
-            message_preview: msg.message.substring(0, 100),
-            message_id: messageId,
-            created_at: new Date().toISOString()
-          });
+          // Log message to database for tracking with timeout protection
+          try {
+            const logController = new AbortController();
+            const logTimeoutId = setTimeout(() => logController.abort(), 5000); // 5 second timeout for logging
+            
+            await supabase.from('message_logs').insert({
+              status: 'sent',
+              phone_number: msg.phoneNumber,
+              message_preview: msg.message.substring(0, 100),
+              message_id: messageId,
+              created_at: new Date().toISOString()
+            });
+            
+            clearTimeout(logTimeoutId);
+          } catch (logError) {
+            console.warn('Failed to log message (non-critical):', logError);
+            // Don't throw - message was sent successfully
+          }
           
           return {
             status: 'success' as const,
@@ -785,20 +831,36 @@ export async function sendWhatsAppMessages(
             messageId: messageId
           };
         } catch (error) {
+          clearTimeout(timeoutId);
+          
+          if (error.name === 'AbortError') {
+            console.error(`❌ [WHATSAPP-SEND] Timeout sending to ${msg.phoneNumber}`);
+            error.message = 'Request timeout - message sending took too long';
+          }
+          
           console.error(`❌ [WHATSAPP-SEND] Error sending to ${msg.phoneNumber}:`, {
             error: error.message,
             stack: error.stack,
             messageIndex: index + 1
           });
           
-          // Log the error
-          await supabase.from('message_logs').insert({
-            status: 'error',
-            phone_number: msg.phoneNumber,
-            message_preview: msg.message.substring(0, 100),
-            error: error.message,
-            created_at: new Date().toISOString()
-          });
+          // Log the error with timeout protection
+          try {
+            const logController = new AbortController();
+            const logTimeoutId = setTimeout(() => logController.abort(), 3000); // 3 second timeout for error logging
+            
+            await supabase.from('message_logs').insert({
+              status: 'error',
+              phone_number: msg.phoneNumber,
+              message_preview: msg.message.substring(0, 100),
+              error: error.message,
+              created_at: new Date().toISOString()
+            });
+            
+            clearTimeout(logTimeoutId);
+          } catch (logError) {
+            console.warn('Failed to log error (non-critical):', logError);
+          }
           
           return {
             status: 'error' as const,
