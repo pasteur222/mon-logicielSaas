@@ -1,10 +1,6 @@
-// Follow this setup guide to integrate the Deno runtime and Supabase functions in your project:
-// https://deno.land/manual/getting_started/setup_your_environment
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { createGroqClient } from "../_shared/groq-client.ts";
-import { determineChatbotTypeFromMessage } from "../_shared/chatbot-utils.ts";
+import { createGroqClient, getSystemGroqClient } from "../_shared/groq-client.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -32,24 +28,62 @@ interface ChatbotResponse {
   source?: string;
 }
 
+// Enhanced logging function with anonymization
+function logInfo(message: string, data?: any) {
+  const anonymizedData = data ? anonymizeLogData(data) : undefined;
+  console.log(`[API-CHATBOT] ${message}`, anonymizedData ? JSON.stringify(anonymizedData, null, 2) : '');
+}
+
+function logError(message: string, error?: any, requestData?: any) {
+  const anonymizedRequest = requestData ? anonymizeLogData(requestData) : undefined;
+  console.error(`[API-CHATBOT] ERROR: ${message}`, {
+    error: error?.message || error,
+    stack: error?.stack,
+    request: anonymizedRequest
+  });
+}
+
+// Anonymize sensitive data for logging
+function anonymizeLogData(data: any): any {
+  if (!data || typeof data !== 'object') return data;
+  
+  const anonymized = { ...data };
+  
+  // Anonymize phone numbers (keep first 3 and last 2 digits)
+  if (anonymized.phoneNumber && typeof anonymized.phoneNumber === 'string') {
+    const phone = anonymized.phoneNumber;
+    if (phone.length > 5) {
+      anonymized.phoneNumber = phone.substring(0, 3) + '***' + phone.substring(phone.length - 2);
+    }
+  }
+  
+  // Truncate long text content
+  if (anonymized.text && typeof anonymized.text === 'string' && anonymized.text.length > 100) {
+    anonymized.text = anonymized.text.substring(0, 100) + '... [truncated]';
+  }
+  
+  return anonymized;
+}
+
 serve(async (req: Request): Promise<Response> => {
   const startTime = Date.now();
   let requestData: ChatbotRequest | undefined;
   
-  // Handle CORS preflight request
-  if (req.method === 'OPTIONS') {
-    return new Response(null, {
-      status: 204,
-      headers: corsHeaders
-    });
-  }
-
   try {
-    console.log(`🤖 [API-CHATBOT] ${req.method} request received from ${req.headers.get('origin') || 'unknown'}`);
+    logInfo(`${req.method} request received from ${req.headers.get('origin') || 'unknown'}`);
+
+    // Handle CORS preflight request
+    if (req.method === 'OPTIONS') {
+      logInfo('CORS preflight request handled');
+      return new Response(null, {
+        status: 204,
+        headers: corsHeaders
+      });
+    }
 
     // Only allow POST requests
     if (req.method !== 'POST') {
-      console.error('❌ [API-CHATBOT] Method not allowed:', req.method);
+      logError('Method not allowed', null, { method: req.method });
       return new Response(
         JSON.stringify({ 
           success: false, 
@@ -65,10 +99,15 @@ serve(async (req: Request): Promise<Response> => {
       );
     }
 
-    // Parse and validate request body
+    // Parse and validate request body with proper error handling
     try {
-      requestData = await req.json();
-      console.log('🤖 [API-CHATBOT] Request data received:', {
+      const rawBody = await req.text();
+      if (!rawBody || rawBody.trim() === '') {
+        throw new Error('Request body is empty');
+      }
+      
+      requestData = JSON.parse(rawBody) as ChatbotRequest;
+      logInfo('Request data parsed successfully', {
         source: requestData.source,
         chatbotType: requestData.chatbotType,
         hasText: !!requestData.text,
@@ -78,7 +117,7 @@ serve(async (req: Request): Promise<Response> => {
         hasSessionId: !!requestData.sessionId
       });
     } catch (parseError) {
-      console.error('❌ [API-CHATBOT] Failed to parse request JSON:', parseError);
+      logError('Failed to parse request JSON', parseError);
       return new Response(
         JSON.stringify({ 
           success: false, 
@@ -96,7 +135,7 @@ serve(async (req: Request): Promise<Response> => {
 
     // Validate required fields
     if (!requestData.text || requestData.text.trim().length === 0) {
-      console.error('❌ [API-CHATBOT] Missing or empty text field');
+      logError('Missing or empty text field', null, requestData);
       return new Response(
         JSON.stringify({ 
           success: false, 
@@ -113,7 +152,7 @@ serve(async (req: Request): Promise<Response> => {
     }
 
     if (!requestData.source || !['web', 'whatsapp'].includes(requestData.source)) {
-      console.error('❌ [API-CHATBOT] Invalid source field:', requestData.source);
+      logError('Invalid source field', null, requestData);
       return new Response(
         JSON.stringify({ 
           success: false, 
@@ -131,7 +170,7 @@ serve(async (req: Request): Promise<Response> => {
 
     // Validate text length
     if (requestData.text.length > 4000) {
-      console.error('❌ [API-CHATBOT] Text too long:', requestData.text.length);
+      logError('Text too long', null, { textLength: requestData.text.length });
       return new Response(
         JSON.stringify({ 
           success: false, 
@@ -152,7 +191,7 @@ serve(async (req: Request): Promise<Response> => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     
     if (!supabaseUrl || !supabaseServiceKey) {
-      console.error('❌ [API-CHATBOT] Missing Supabase environment variables');
+      logError('Missing Supabase environment variables');
       return new Response(
         JSON.stringify({ 
           success: false, 
@@ -171,7 +210,7 @@ serve(async (req: Request): Promise<Response> => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Save incoming message to database with EXPLICIT source preservation
-    console.log('💾 [API-CHATBOT] Saving incoming message with source:', requestData.source);
+    logInfo('Saving incoming message with source', { source: requestData.source });
     const { data: savedMessage, error: saveError } = await supabase
       .from('customer_conversations')
       .insert({
@@ -189,15 +228,61 @@ serve(async (req: Request): Promise<Response> => {
       .single();
 
     if (saveError) {
-      console.error('❌ [API-CHATBOT] Error saving incoming message:', saveError);
+      logError('Error saving incoming message', saveError, requestData);
       // Continue processing even if save fails
     } else {
-      console.log('✅ [API-CHATBOT] Incoming message saved with source:', requestData.source);
+      logInfo('Incoming message saved successfully', { source: requestData.source });
     }
 
     // Get system-wide Groq client for customer service
-    console.log('🧠 [API-CHATBOT] Creating Groq client for customer service');
-    const groq = await getSystemGroqClient();
+    logInfo('Creating Groq client for customer service');
+    let groq;
+    try {
+      groq = await getSystemGroqClient();
+      logInfo('Groq client created successfully');
+    } catch (groqError) {
+      logError('Failed to create Groq client', groqError, requestData);
+      
+      // Return a fallback response instead of failing completely
+      const fallbackResponse = requestData.source === 'web'
+        ? "Désolé, notre service est temporairement indisponible. Veuillez réessayer dans quelques minutes."
+        : "Merci pour votre message. Notre équipe vous répondra dans les plus brefs délais.";
+      
+      // Try to save fallback response
+      try {
+        await supabase
+          .from('customer_conversations')
+          .insert({
+            phone_number: requestData.phoneNumber,
+            web_user_id: requestData.webUserId,
+            session_id: requestData.sessionId,
+            source: requestData.source,
+            content: fallbackResponse,
+            sender: 'bot',
+            intent: 'client',
+            created_at: new Date().toISOString()
+          });
+      } catch (fallbackSaveError) {
+        logError('Failed to save fallback response', fallbackSaveError);
+      }
+      
+      return new Response(
+        JSON.stringify({ 
+          success: true, // Return success to prevent webhook retries
+          response: fallbackResponse,
+          sessionId: requestData.sessionId,
+          source: requestData.source,
+          error: 'Processed with fallback response due to AI service unavailability'
+        }),
+        { 
+          status: 200,
+          headers: { 
+            'Content-Type': 'application/json',
+            ...corsHeaders
+          }
+        }
+      );
+    }
 
     // Generate system prompt based on source
     const systemPrompt = `Vous êtes un assistant de service client professionnel pour Airtel GPT.
@@ -209,31 +294,43 @@ Répondez toujours en français sauf si le client écrit dans une autre langue.
 Gardez vos réponses concises mais complètes (maximum 500 mots).
 ${requestData.source === 'web' ? 'Le client vous contacte via le site web.' : 'Le client vous contacte via WhatsApp.'}`;
 
-    // Generate response using Groq
-    console.log('🧠 [API-CHATBOT] Generating AI response');
-    const completion = await groq.chat.completions.create({
-      messages: [
-        {
-          role: "system",
-          content: systemPrompt
-        },
-        { 
-          role: "user", 
-          content: requestData.text 
-        }
-      ],
-      model: 'llama3-70b-8192',
-      temperature: 0.7,
-      max_tokens: 1500,
-    });
+    // Generate response using Groq with error handling
+    logInfo('Generating AI response');
+    let response: string;
+    try {
+      const completion = await groq.chat.completions.create({
+        messages: [
+          {
+            role: "system",
+            content: systemPrompt
+          },
+          { 
+            role: "user", 
+            content: requestData.text 
+          }
+        ],
+        model: 'llama3-70b-8192',
+        temperature: 0.7,
+        max_tokens: 1500,
+      });
 
-    const response = completion.choices[0]?.message?.content || 
-      "Je suis désolé, je n'ai pas pu générer une réponse appropriée. Un agent vous contactera bientôt.";
+      response = completion.choices[0]?.message?.content || 
+        "Je suis désolé, je n'ai pas pu générer une réponse appropriée. Un agent vous contactera bientôt.";
+      
+      logInfo('AI response generated successfully');
+    } catch (aiError) {
+      logError('AI response generation failed', aiError, requestData);
+      
+      // Use fallback response
+      response = requestData.source === 'web'
+        ? "Désolé, notre service est temporairement indisponible. Veuillez réessayer dans quelques minutes."
+        : "Merci pour votre message. Notre équipe vous répondra dans les plus brefs délais.";
+    }
 
     // Validate and sanitize response
     let sanitizedResponse = response;
     if (sanitizedResponse.length > 4000) {
-      console.warn('🎧 [API-CHATBOT] Response too long, truncating');
+      logInfo('Response too long, truncating', { originalLength: sanitizedResponse.length });
       sanitizedResponse = sanitizedResponse.substring(0, 3997) + '...';
     }
 
@@ -245,10 +342,10 @@ ${requestData.source === 'web' ? 'Le client vous contacte via le site web.' : 'L
 
     // Calculate response time
     const responseTime = (Date.now() - startTime) / 1000;
-    console.log(`⏱️ [API-CHATBOT] Response generated in ${responseTime.toFixed(2)}s`);
+    logInfo(`Response generated in ${responseTime.toFixed(2)}s`);
 
     // Save bot response to database with EXPLICIT source preservation
-    console.log('💾 [API-CHATBOT] Saving bot response with source:', requestData.source);
+    logInfo('Saving bot response with source', { source: requestData.source });
     const { data: savedResponse, error: responseError } = await supabase
       .from('customer_conversations')
       .insert({
@@ -266,10 +363,10 @@ ${requestData.source === 'web' ? 'Le client vous contacte via le site web.' : 'L
       .single();
 
     if (responseError) {
-      console.error('❌ [API-CHATBOT] Error saving bot response:', responseError);
+      logError('Error saving bot response', responseError, requestData);
       // Continue even if save fails
     } else {
-      console.log('✅ [API-CHATBOT] Bot response saved with source:', requestData.source);
+      logInfo('Bot response saved successfully', { source: requestData.source });
     }
 
     // Return success response with source preservation
@@ -281,7 +378,7 @@ ${requestData.source === 'web' ? 'Le client vous contacte via le site web.' : 'L
       source: requestData.source // PRESERVE AND RETURN SOURCE
     };
 
-    console.log('✅ [API-CHATBOT] Request processed successfully with source:', requestData.source);
+    logInfo('Request processed successfully', { source: requestData.source });
     return new Response(
       JSON.stringify(successResponse),
       { 
@@ -294,18 +391,48 @@ ${requestData.source === 'web' ? 'Le client vous contacte via le site web.' : 'L
     );
 
   } catch (error) {
-    console.error('❌ [API-CHATBOT] Critical error:', {
-      message: error.message,
-      stack: error.stack,
-      source: requestData?.source || 'unknown'
-    });
+    logError('Critical error in api-chatbot', error, requestData);
+    
+    // Ensure we have a fallback response even in critical errors
+    const fallbackResponse = requestData?.source === 'web'
+      ? "Désolé, notre service est temporairement indisponible. Veuillez réessayer dans quelques minutes."
+      : "Merci pour votre message. Notre équipe vous répondra dans les plus brefs délais.";
+    
+    // Try to save fallback response if we have request data
+    if (requestData) {
+      try {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL');
+        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+        
+        if (supabaseUrl && supabaseServiceKey) {
+          const supabase = createClient(supabaseUrl, supabaseServiceKey);
+          
+          await supabase
+            .from('customer_conversations')
+            .insert({
+              phone_number: requestData.phoneNumber,
+              web_user_id: requestData.webUserId,
+              session_id: requestData.sessionId,
+              source: requestData.source,
+              content: fallbackResponse,
+              sender: 'bot',
+              intent: 'client',
+              created_at: new Date().toISOString()
+            });
+          
+          logInfo('Fallback response saved successfully', { source: requestData.source });
+        }
+      } catch (fallbackError) {
+        logError('Failed to save fallback response', fallbackError);
+      }
+    }
     
     // Return error response with source preservation
     const errorResponse: ChatbotResponse = {
       success: false,
       error: error.message || 'An unexpected error occurred',
-      sessionId: requestData?.sessionId || undefined,
-      source: requestData?.source || undefined // PRESERVE SOURCE EVEN IN ERROR
+      sessionId: requestData?.sessionId,
+      source: requestData?.source // PRESERVE SOURCE EVEN IN ERROR
     };
 
     return new Response(

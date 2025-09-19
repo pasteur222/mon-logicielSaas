@@ -6,6 +6,18 @@ const DEFAULT_MODEL = "llama3-70b-8192";
 // List of deprecated models that should never be used
 const DEPRECATED_MODELS = ["mixtral-8x7b-32768"];
 
+// Enhanced logging for Groq client operations
+function logGroqInfo(message: string, data?: any) {
+  console.log(`[GROQ-CLIENT] ${message}`, data ? JSON.stringify(data, null, 2) : '');
+}
+
+function logGroqError(message: string, error?: any) {
+  console.error(`[GROQ-CLIENT] ERROR: ${message}`, {
+    error: error?.message || error,
+    stack: error?.stack
+  });
+}
+
 /**
  * Get Groq configuration for a user
  * @param userId The user ID to get configuration for
@@ -13,11 +25,14 @@ const DEPRECATED_MODELS = ["mixtral-8x7b-32768"];
  */
 export async function getGroqConfig(userId: string) {
   try {
+    logGroqInfo('Getting Groq configuration for user', { userId });
+    
     // Get Supabase client
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY');
     
     if (!supabaseUrl || !supabaseKey) {
+      logGroqError('Missing Supabase environment variables');
       throw new Error('Missing Supabase environment variables');
     }
     
@@ -31,18 +46,19 @@ export async function getGroqConfig(userId: string) {
       .maybeSingle();
 
     if (error) {
-      console.error('Error fetching Groq configuration:', error);
+      logGroqError('Error fetching Groq configuration', error);
       throw new Error(`Failed to fetch Groq configuration: ${error.message}`);
     }
 
     if (!data || !data.api_key) {
+      logGroqError('No Groq API key found for user', null);
       throw new Error('No Groq API key found for this user');
     }
 
     // Check if the model is deprecated and replace it if needed
     let modelToUse = data.model || DEFAULT_MODEL;
     if (DEPRECATED_MODELS.includes(modelToUse)) {
-      console.warn(`[SECURITY] Detected deprecated model ${modelToUse} in database for user ${userId}, replacing with ${DEFAULT_MODEL}`);
+      logGroqInfo(`[SECURITY] Detected deprecated model ${modelToUse}, replacing with ${DEFAULT_MODEL}`, { userId });
       modelToUse = DEFAULT_MODEL;
       
       // Try to update the database to prevent future issues
@@ -51,18 +67,19 @@ export async function getGroqConfig(userId: string) {
           .from('user_groq_config')
           .update({ model: DEFAULT_MODEL })
           .eq('user_id', userId);
-        console.log(`Successfully updated user ${userId}'s model from ${data.model} to ${DEFAULT_MODEL}`);
+        logGroqInfo('Successfully updated user model', { userId, oldModel: data.model, newModel: DEFAULT_MODEL });
       } catch (updateError) {
-        console.error('Failed to update deprecated model in database:', updateError);
+        logGroqError('Failed to update deprecated model in database', updateError);
       }
     }
 
+    logGroqInfo('Groq configuration retrieved successfully', { userId, model: modelToUse });
     return {
       apiKey: data.api_key,
       model: modelToUse
     };
   } catch (error) {
-    console.error('Error getting Groq configuration:', error);
+    logGroqError('Error getting Groq configuration', error);
     throw error;
   }
 }
@@ -74,9 +91,11 @@ export async function getGroqConfig(userId: string) {
  */
 export async function createGroqClient(userId: string): Promise<Groq> {
   try {
+    logGroqInfo('Creating Groq client for user', { userId });
+    
     // Get the Groq configuration for this user
     const config = await getGroqConfig(userId).catch(async (error) => {
-      console.warn(`Error getting Groq config for user ${userId}: ${error.message}`);
+      logGroqInfo(`No user config found, trying fallback`, { userId, error: error.message });
       
       // Fallback: Get any available Groq configuration
       const supabaseUrl = Deno.env.get('SUPABASE_URL');
@@ -99,20 +118,21 @@ export async function createGroqClient(userId: string): Promise<Groq> {
         throw new Error('No Groq configuration found in the system');
       }
       
-      console.log('Using fallback Groq configuration');
+      logGroqInfo('Using fallback Groq configuration');
       return {
         apiKey: anyConfig.api_key,
         model: anyConfig.model || DEFAULT_MODEL
       };
     });
 
+    logGroqInfo('Creating Groq client instance');
     // Create and return Groq client with the configuration
     return new Groq({
       apiKey: config.apiKey,
       dangerouslyAllowBrowser: true
     });
   } catch (error) {
-    console.error('Error creating Groq client:', error);
+    logGroqError('Error creating Groq client', error);
     throw error;
   }
 }
@@ -124,11 +144,14 @@ export async function createGroqClient(userId: string): Promise<Groq> {
  */
 export async function getSystemGroqClient(): Promise<Groq> {
   try {
+    logGroqInfo('Getting system-wide Groq client');
+    
     // Try to get any available Groq configuration
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY');
     
     if (!supabaseUrl || !supabaseKey) {
+      logGroqError('Missing Supabase environment variables for system client');
       throw new Error('Missing Supabase environment variables');
     }
     
@@ -142,15 +165,16 @@ export async function getSystemGroqClient(): Promise<Groq> {
       .maybeSingle();
     
     if (configError || !anyConfig || !anyConfig.api_key) {
+      logGroqError('No Groq configuration found in system', configError);
       throw new Error('No Groq configuration found in the system');
     }
     
-    console.log(`Using Groq configuration from user: ${anyConfig.user_id}`);
+    logGroqInfo('Using Groq configuration from user', { userId: anyConfig.user_id });
     
     // Ensure we're not using the deprecated model
     let modelToUse = anyConfig.model || DEFAULT_MODEL;
     if (DEPRECATED_MODELS.includes(modelToUse)) {
-      console.warn(`[SECURITY] Detected deprecated model ${modelToUse} in system-wide config, switching to ${DEFAULT_MODEL}`);
+      logGroqInfo(`[SECURITY] Detected deprecated model, switching`, { oldModel: modelToUse, newModel: DEFAULT_MODEL });
       modelToUse = DEFAULT_MODEL;
       
       // Update the database to prevent future issues
@@ -159,14 +183,14 @@ export async function getSystemGroqClient(): Promise<Groq> {
           .from('user_groq_config')
           .update({ model: DEFAULT_MODEL })
           .eq('user_id', anyConfig.user_id);
-        console.log(`Successfully updated user ${anyConfig.user_id}'s model from ${anyConfig.model} to ${DEFAULT_MODEL}`);
+        logGroqInfo('Successfully updated deprecated model', { userId: anyConfig.user_id });
       } catch (updateError) {
-        console.error('Failed to update deprecated model in database:', updateError);
+        logGroqError('Failed to update deprecated model in database', updateError);
       }
     }
 
     // Log the model being used
-    console.log(`[GROQ-CLIENT] Using Groq model: ${modelToUse} for system-wide client`);
+    logGroqInfo('Using Groq model for system-wide client', { model: modelToUse });
 
     // Create and return Groq client
     return new Groq({
@@ -174,17 +198,18 @@ export async function getSystemGroqClient(): Promise<Groq> {
       dangerouslyAllowBrowser: true
     });
   } catch (error) {
-    console.error('Error creating Groq client:', error);
+    logGroqError('Error creating system Groq client', error);
     
     // Last resort fallback - create a client with environment variable if available
     const fallbackApiKey = Deno.env.get('GROQ_API_KEY');
     if (fallbackApiKey) {
-      console.log('Using fallback GROQ_API_KEY from environment variables');
+      logGroqInfo('Using fallback GROQ_API_KEY from environment variables');
       return new Groq({
         apiKey: fallbackApiKey,
         dangerouslyAllowBrowser: true
       });
     } else {
+      logGroqError('No fallback API key available');
       throw error;
     }
   }
