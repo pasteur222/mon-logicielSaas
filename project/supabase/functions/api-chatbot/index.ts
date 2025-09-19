@@ -34,6 +34,7 @@ interface ChatbotResponse {
 
 serve(async (req: Request): Promise<Response> => {
   const startTime = Date.now();
+  let requestData: ChatbotRequest | undefined;
   
   // Handle CORS preflight request
   if (req.method === 'OPTIONS') {
@@ -65,7 +66,6 @@ serve(async (req: Request): Promise<Response> => {
     }
 
     // Parse and validate request body
-    let requestData: ChatbotRequest;
     try {
       requestData = await req.json();
       console.log('🤖 [API-CHATBOT] Request data received:', {
@@ -304,8 +304,8 @@ ${requestData.source === 'web' ? 'Le client vous contacte via le site web.' : 'L
     const errorResponse: ChatbotResponse = {
       success: false,
       error: error.message || 'An unexpected error occurred',
-      sessionId: requestData?.sessionId,
-      source: requestData?.source // PRESERVE SOURCE EVEN IN ERROR
+      sessionId: requestData?.sessionId || undefined,
+      source: requestData?.source || undefined // PRESERVE SOURCE EVEN IN ERROR
     };
 
     return new Response(
