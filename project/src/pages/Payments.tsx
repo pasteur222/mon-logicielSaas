@@ -76,16 +76,16 @@ const Payments = () => {
 
       // Get student transactions and subscriptions if student profile exists
       if (studentProfile) {
-        // Get all transactions
-        const { data: transactionData, error: transactionError } = await supabase
+        // Get student subscription transactions
+        const { data: studentTransactionData, error: studentTransactionError } = await supabase
           .from('subscription_transactions')
           .select('*')
           .order('created_at', { ascending: false });
 
-        if (transactionError) {
-          console.error('Error fetching transactions:', transactionError);
+        if (studentTransactionError) {
+          console.error('Error fetching student transactions:', studentTransactionError);
         } else {
-          setTransactions(transactionData || []);
+          setTransactions(studentTransactionData || []);
         }
 
         // Get all subscriptions
@@ -100,6 +100,19 @@ const Payments = () => {
         } else {
           setSubscriptions(subscriptionData || []);
         }
+      }
+
+      // Get business transactions for all users (for display purposes)
+      const { data: businessTransactionData, error: businessTransactionError } = await supabase
+        .from('business_transactions')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (businessTransactionError) {
+        console.error('Error fetching business transactions:', businessTransactionError);
+      } else {
+        // Combine student and business transactions
+        setTransactions(prev => [...prev, ...(businessTransactionData || [])]);
       }
 
       // Calculate statistics from all transactions
@@ -192,10 +205,10 @@ const Payments = () => {
           </p>
           <div className="flex gap-4">
             <button
-              onClick={() => navigate('/airtel-chat')}
+              onClick={() => navigate('/business-payment/basic')}
               className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
             >
-              S'abonner (Éducation)
+              Subscribe
             </button>
           </div>
         </div>
