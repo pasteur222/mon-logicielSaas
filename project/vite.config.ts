@@ -7,7 +7,6 @@ export default defineConfig({
     exclude: ['lucide-react'],
   },
   preview: {
-    // Autoriser ce host pour le mode preview
-    allowedHosts: ['saasprospector.onrender.com'],
+    allowedHosts: ['airtelgptsaasprospector.onrender.com'],
   },
 });
