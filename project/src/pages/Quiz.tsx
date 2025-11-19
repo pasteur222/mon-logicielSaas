@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MessageSquare, Bot, Settings, RefreshCw, AlertCircle, Plus, X, Save, Play, Pause, Database, BarChart2, Trash2, AlertTriangle, Calendar, Clock, Users, CheckCircle, Target, Send, Trophy, Edit } from 'lucide-react';
+import { MessageSquare, Bot, Settings, RefreshCw, AlertCircle, Plus, X, Save, Play, Pause, Database, BarChart2, Trash2, AlertTriangle, Calendar, Clock, Users, CheckCircle, Target, Send, Trophy, CreditCard as Edit } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { sendQuizToNumbers, exportQuizResults, getQuestionTypeLabel } from '../lib/quiz-marketing';
 import { getEnhancedQuizStatistics, getQuizParticipants } from '../lib/quiz-chatbot';
@@ -32,7 +32,7 @@ interface QuizUser {
 }
 
 interface QuizQuestion {
-  id: number;
+  id: string;
   text: string;
   type: 'personal' | 'preference' | 'quiz' | 'product_test';
   options?: any;

@@ -108,24 +108,24 @@ export async function processCustomerServiceMessage(message: CustomerServiceMess
     const groq = await createGroqClient(userId);
 
     let response;
-    
+
     if (autoReplyResponse) {
       // Use auto-reply rule response as base, but enhance with AI
       console.log('🤖 [CUSTOMER-SERVICE] Using auto-reply rule as base');
-      
+
       const completion = await groq.chat.completions.create({
         messages: [
           {
             role: "system",
             content: `Vous êtes un assistant de service client professionnel pour Airtel GPT.
             Une règle automatique a été déclenchée avec cette réponse: "${autoReplyResponse}"
-            
+
             Votre tâche est d'améliorer cette réponse en:
             1. La rendant plus professionnelle et personnalisée
             2. Ajoutant des détails pertinents si nécessaire
             3. Gardant le message principal de la règle automatique
             4. Adaptant le ton selon le contexte du message utilisateur
-            
+
             Répondez toujours en français sauf si le client écrit dans une autre langue.
             Gardez vos réponses concises mais complètes (maximum 500 mots).
             ${message.source === 'web' ? 'Le client vous contacte via le site web.' : 'Le client vous contacte via WhatsApp.'}`
@@ -141,29 +141,29 @@ export async function processCustomerServiceMessage(message: CustomerServiceMess
     } else {
       // Generate standard AI response
       console.log('🤖 [CUSTOMER-SERVICE] Generating standard AI response');
-      
-    const completion = await groq.chat.completions.create({
-      messages: [
-        {
-          role: "system",
-          content: `Vous êtes un assistant de service client professionnel pour Airtel GPT.
-          Votre objectif est d'aider les clients avec leurs demandes, problèmes et questions.
-          Soyez professionnel, courtois et orienté solution.
-          Fournissez des instructions claires et demandez des clarifications si nécessaire.
-          Si vous ne pouvez pas résoudre un problème, proposez de l'escalader vers un agent humain.
-          Répondez toujours en français sauf si le client écrit dans une autre langue.
-          Gardez vos réponses concises mais complètes (maximum 500 mots).
-          ${message.source === 'web' ? 'L\'utilisateur vous contacte via votre site web.' : 'L\'utilisateur vous contacte via WhatsApp.'}`
-        },
-        { role: "user", content: message.content }
-      ],
-      model: 'llama3-70b-8192',
-      temperature: 0.7,
-      max_tokens: 1500,
-    });
 
-    const response = completion.choices[0]?.message?.content || 
-      "Je suis désolé, je n'ai pas pu générer une réponse appropriée. Un agent vous contactera bientôt.";
+      const completion = await groq.chat.completions.create({
+        messages: [
+          {
+            role: "system",
+            content: `Vous êtes un assistant de service client professionnel pour Airtel GPT.
+            Votre objectif est d'aider les clients avec leurs demandes, problèmes et questions.
+            Soyez professionnel, courtois et orienté solution.
+            Fournissez des instructions claires et demandez des clarifications si nécessaire.
+            Si vous ne pouvez pas résoudre un problème, proposez de l'escalader vers un agent humain.
+            Répondez toujours en français sauf si le client écrit dans une autre langue.
+            Gardez vos réponses concises mais complètes (maximum 500 mots).
+            ${message.source === 'web' ? 'L\'utilisateur vous contacte via votre site web.' : 'L\'utilisateur vous contacte via WhatsApp.'}`
+          },
+          { role: "user", content: message.content }
+        ],
+        model: 'llama3-70b-8192',
+        temperature: 0.7,
+        max_tokens: 1500,
+      });
+
+      response = completion.choices[0]?.message?.content ||
+        "Je suis désolé, je n'ai pas pu générer une réponse appropriée. Un agent vous contactera bientôt.";
     }
 
     // Validate and potentially truncate response

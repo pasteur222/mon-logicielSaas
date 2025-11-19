@@ -25,7 +25,7 @@ interface QuizQuestion {
   text: string;
   type: 'personal' | 'preference' | 'quiz';
   options?: any;
-  points?: any;
+  points?: number;
   required: boolean;
   order_index: number;
   correct_answer?: boolean;
@@ -281,8 +281,8 @@ function formatQuizQuestion(question: QuizQuestion, currentNumber: number, total
   switch (question.type) {
     case 'quiz':
       formattedQuestion += '\n\n💡 Répondez par "Vrai" ou "Faux"';
-      if (question.points?.value) {
-        formattedQuestion += `\n🏆 Points possibles: ${question.points.value}`;
+      if (question.points) {
+        formattedQuestion += `\n🏆 Points possibles: ${question.points}`;
       }
       break;
       

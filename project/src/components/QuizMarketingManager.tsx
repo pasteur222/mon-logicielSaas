@@ -1,13 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Save, X, Upload, Download, Send, BarChart2, Users, Trophy, Target, AlertCircle, CheckCircle, RefreshCw, FileText } from 'lucide-react';
+import { Plus, CreditCard as Edit, Trash2, Save, X, Upload, Download, Send, BarChart2, Users, Trophy, Target, AlertCircle, CheckCircle, RefreshCw, FileText } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { 
+  createQuizQuestion as createQuizQuestionRobust,
+  deleteQuizQuestion as deleteQuizQuestionRobust,
+  getNextOrderIndex,
+  reorderQuestionsAfterDeletion,
+  validateQuizQuestionData,
+  type QuizQuestionData
+} from '../lib/quiz-question-manager';
 import { 
   sendQuizToNumbers, 
   exportQuizResults, 
   getQuizStats, 
-  createQuizQuestion,
-  updateQuizQuestion,
-  deleteQuizQuestion,
   getQuestionTypeLabel,
   type QuizQuestion, 
   type QuizUser, 
@@ -116,40 +121,76 @@ const QuizMarketingManager: React.FC<QuizMarketingManagerProps> = ({ onClose }) 
     try {
       setIsSavingQuestion(true);
       setError(null);
+      setSuccess(null);
       
-      if (!newQuestion.text || !newQuestion.type) {
-        setError('Veuillez remplir tous les champs obligatoires');
+      console.log('🔧 [QUIZ-MARKETING-UI] Starting question save process:', {
+        isEditing: !!editingQuestion,
+        questionType: newQuestion.type,
+        hasText: !!newQuestion.text,
+        textLength: newQuestion.text?.length || 0
+      });
+
+      // Prepare question data for validation
+      const questionData: Partial<QuizQuestionData> = {
+        text: newQuestion.text,
+        type: newQuestion.type,
+        required: newQuestion.required ?? true,
+        order_index: newQuestion.order_index ?? (editingQuestion ? editingQuestion.order_index : await getNextOrderIndex()),
+        category: newQuestion.category,
+        options: newQuestion.options,
+        points: newQuestion.points,
+        correct_answer: newQuestion.correct_answer,
+        conditional_logic: newQuestion.conditional_logic
+      };
+
+      // Validate the question data before proceeding
+      const validation = validateQuizQuestionData(questionData);
+      
+      if (!validation.isValid) {
+        const errorMessage = `Données invalides: ${validation.errors.join(', ')}`;
+        console.error('❌ [QUIZ-MARKETING-UI] Validation failed:', validation.errors);
+        setError(errorMessage);
         return;
       }
 
       if (editingQuestion) {
-        // Update existing question
-        await updateQuizQuestion(editingQuestion.id, {
-          text: newQuestion.text,
-          type: newQuestion.type,
-          options: newQuestion.options,
-          points: newQuestion.points,
-          required: newQuestion.required,
-          order_index: newQuestion.order_index,
-          correct_answer: newQuestion.correct_answer
-        });
+        console.log('📝 [QUIZ-MARKETING-UI] Updating existing question:', editingQuestion.id);
+        
+        // Update existing question using direct Supabase call with validation
+        const updateData = validation.sanitizedData!;
+        const { error: updateError } = await supabase
+          .from('quiz_questions')
+          .update({
+            ...updateData,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', editingQuestion.id);
+
+        if (updateError) {
+          console.error('❌ [QUIZ-MARKETING-UI] Update failed:', updateError);
+          throw new Error(`Échec de la mise à jour: ${updateError.message}`);
+        }
+
+        console.log('✅ [QUIZ-MARKETING-UI] Question updated successfully');
         
         setSuccess('Question mise à jour avec succès');
       } else {
-        // Create new question
-        await createQuizQuestion({
-          text: newQuestion.text!,
-          type: newQuestion.type!,
-          options: newQuestion.options,
-          points: newQuestion.points,
-          required: newQuestion.required!,
-          order_index: newQuestion.order_index || questions.length,
-          correct_answer: newQuestion.correct_answer
-        });
+        console.log('➕ [QUIZ-MARKETING-UI] Creating new question');
+        
+        // Create new question using the robust manager
+        const createResult = await createQuizQuestionRobust(questionData);
+        
+        if (!createResult.success) {
+          console.error('❌ [QUIZ-MARKETING-UI] Create failed:', createResult.error);
+          throw new Error(createResult.error || 'Échec de la création de la question');
+        }
+
+        console.log('✅ [QUIZ-MARKETING-UI] Question created successfully:', createResult.questionId);
         
         setSuccess('Question créée avec succès');
       }
 
+      // Reset form and close editor
       setShowQuestionEditor(false);
       setEditingQuestion(null);
       setNewQuestion({
@@ -160,30 +201,65 @@ const QuizMarketingManager: React.FC<QuizMarketingManagerProps> = ({ onClose }) 
         category: 'General'
       });
       
+      // Reload questions to reflect changes
       await loadQuestions();
       
+      // Clear success message after 3 seconds
       setTimeout(() => setSuccess(null), 3000);
+      
     } catch (error) {
-      console.error('Error saving question:', error);
-      setError('Erreur lors de la sauvegarde de la question');
+      console.error('❌ [QUIZ-MARKETING-UI] Critical error saving question:', error);
+      setError(error instanceof Error ? error.message : 'Erreur critique lors de la sauvegarde');
     } finally {
       setIsSavingQuestion(false);
     }
   };
 
   const handleDeleteQuestion = async (id: number) => {
-    if (!confirm('Êtes-vous sûr de vouloir supprimer cette question ?')) return;
+    if (!confirm('Êtes-vous sûr de vouloir supprimer cette question ? Cette action est irréversible.')) {
+      return;
+    }
 
     try {
-      await deleteQuizQuestion(id);
+      console.log('🗑️ [QUIZ-MARKETING-UI] Starting question deletion:', { questionId: id });
+      
+      // Find the question to get its order index for reordering
+      const questionToDelete = questions.find(q => q.id === id);
+      const deletedOrderIndex = questionToDelete?.order_index;
+      
+      // Delete the question using the robust manager
+      const deleteResult = await deleteQuizQuestionRobust(id);
+      
+      if (!deleteResult.success) {
+        console.error('❌ [QUIZ-MARKETING-UI] Delete failed:', deleteResult.error);
+        throw new Error(deleteResult.error || 'Échec de la suppression de la question');
+      }
+
+      console.log('✅ [QUIZ-MARKETING-UI] Question deleted successfully');
+      
+      // Immediately update UI state to remove the deleted question
+      setQuestions(prevQuestions => prevQuestions.filter(q => q.id !== id));
+      
+      // Reorder remaining questions if needed
+      if (deletedOrderIndex !== undefined) {
+        try {
+          await reorderQuestionsAfterDeletion(deletedOrderIndex);
+          console.log('✅ [QUIZ-MARKETING-UI] Questions reordered after deletion');
+        } catch (reorderError) {
+          console.warn('⚠️ [QUIZ-MARKETING-UI] Failed to reorder questions:', reorderError);
+          // Don't fail the deletion if reordering fails
+        }
+      }
       
       setSuccess('Question supprimée avec succès');
+      
+      // Reload questions to ensure consistency
       await loadQuestions();
       
       setTimeout(() => setSuccess(null), 3000);
     } catch (error) {
-      console.error('Error deleting question:', error);
-      setError('Erreur lors de la suppression de la question');
+      console.error('❌ [QUIZ-MARKETING-UI] Critical error deleting question:', error);
+      setError(error instanceof Error ? error.message : 'Erreur critique lors de la suppression');
     }
   };
 

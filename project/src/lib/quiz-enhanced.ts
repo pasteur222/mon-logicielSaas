@@ -759,7 +759,7 @@ export async function getEnhancedQuizStatistics(): Promise<QuizMetrics> {
     return await getCachedQuizStatistics();
   } catch (error) {
     console.error('Error getting enhanced quiz statistics:', error);
-    // Return default metrics if calculation fails
+    // Return default metrics if calculation fails to prevent dashboard crashes
     return {
       totalParticipants: 0,
       profileBreakdown: { discovery: 0, active: 0, vip: 0 },

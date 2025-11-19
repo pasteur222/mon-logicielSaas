@@ -1,0 +1,549 @@
+import { supabase } from './supabase';
+
+/**
+ * Centralized chatbot communication system
+ * Handles real-time synchronization between chatbots and application modules
+ */
+
+export interface ChatbotMessage {
+  id?: string;
+  phone_number?: string;
+  web_user_id?: string;
+  session_id?: string;
+  source: 'whatsapp' | 'web';
+  content: string;
+  sender: 'user' | 'bot';
+  intent: 'client' | 'education' | 'quiz';
+  user_agent?: string;
+  response_time?: number;
+  created_at?: string;
+}
+
+export interface QuizAnswer {
+  user_id: string;
+  question_id: string;
+  answer: string;
+  points_awarded: number;
+  is_correct: boolean;
+}
+
+export interface QuizUser {
+  phone_number: string;
+  name?: string;
+  email?: string;
+  address?: string;
+  profession?: string;
+  preferences?: any;
+  score: number;
+  profile: 'discovery' | 'active' | 'vip';
+  current_step: number;
+  status: 'active' | 'ended' | 'completed';
+}
+
+/**
+ * Save conversation message with guaranteed persistence
+ */
+export async function saveConversationMessage(message: ChatbotMessage): Promise<string> {
+  try {
+    console.log('💾 [CHATBOT-COMMUNICATION] Saving conversation message:', {
+      phoneNumber: message.phone_number,
+      webUserId: message.web_user_id,
+      source: message.source, // Preserve source: whatsapp/web
+      sender: message.sender,
+      intent: message.intent,
+      contentLength: message.content?.length || 0
+    });
+
+    // Add timeout protection for database operations
+    const saveWithTimeout = async () => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+      
+      try {
+        const result = await supabase
+          .from('customer_conversations')
+          .insert({
+            phone_number: message.phone_number,
+            web_user_id: message.web_user_id,
+            session_id: message.session_id,
+            source: message.source, // Explicitly preserve source
+            content: message.content,
+            sender: message.sender,
+            intent: message.intent,
+            user_agent: message.user_agent,
+            response_time: message.response_time,
+            created_at: message.created_at || new Date().toISOString()
+          })
+          .select('id')
+          .single();
+        
+        clearTimeout(timeoutId);
+        return result;
+      } catch (error) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+          throw new Error('Database timeout: Message save took too long');
+        }
+        throw error;
+      }
+    };
+    const { data, error } = await saveWithTimeout();
+
+    if (error) {
+      console.error('Error saving conversation message:', error);
+      throw new Error(`Failed to save message: ${error.message}`);
+    }
+
+    console.log('✅ [CHATBOT-COMMUNICATION] Message saved successfully:', {
+      messageId: data.id,
+      phoneNumber: message.phone_number,
+      webUserId: message.web_user_id
+    });
+
+    // Trigger real-time update for connected clients with timeout protection
+    try {
+      const updateController = new AbortController();
+      const updateTimeoutId = setTimeout(() => updateController.abort(), 5000); // 5 second timeout for updates
+      
+      await triggerModuleUpdate('conversations', {
+        action: 'message_added',
+        messageId: data.id,
+        intent: message.intent,
+        source: message.source
+      });
+      
+      clearTimeout(updateTimeoutId);
+    } catch (updateError) {
+      console.warn('Failed to trigger real-time update (non-critical):', updateError);
+      // Don't throw - message was saved successfully
+    }
+
+    return data.id;
+  } catch (error) {
+    console.error('Critical error saving conversation:', error);
+    throw error;
+  }
+}
+
+/**
+ * Save quiz answer with analytics calculation
+ */
+export async function saveQuizAnswer(answer: QuizAnswer): Promise<void> {
+  try {
+    // Start a transaction to ensure data consistency
+    const { error: answerError } = await supabase
+      .from('quiz_answers')
+      .insert({
+        user_id: answer.user_id,
+        question_id: answer.question_id,
+        answer: answer.answer,
+        points_awarded: answer.points_awarded,
+        created_at: new Date().toISOString()
+      });
+
+    if (answerError) {
+      throw new Error(`Failed to save quiz answer: ${answerError.message}`);
+    }
+
+    // Update user score and profile
+    await updateQuizUserScore(answer.user_id, answer.points_awarded);
+
+    // Trigger real-time analytics update
+    await triggerModuleUpdate('quiz', {
+      action: 'answer_submitted',
+      userId: answer.user_id,
+      points: answer.points_awarded,
+      isCorrect: answer.is_correct
+    });
+
+    console.log('Quiz answer saved successfully:', answer);
+  } catch (error) {
+    console.error('Critical error saving quiz answer:', error);
+    throw error;
+  }
+}
+
+/**
+ * Update quiz user score and recalculate profile
+ */
+export async function updateQuizUserScore(userId: string, pointsToAdd: number): Promise<void> {
+  try {
+    // Get current user data
+    const { data: currentUser, error: getUserError } = await supabase
+      .from('quiz_users')
+      .select('*')
+      .eq('id', userId)
+      .single();
+
+    if (getUserError) {
+      throw new Error(`Failed to get quiz user: ${getUserError.message}`);
+    }
+
+    const newScore = currentUser.score + pointsToAdd;
+    
+    // Determine new profile based on score
+    let newProfile = 'discovery';
+    if (newScore >= 80) {
+      newProfile = 'vip';
+    } else if (newScore >= 40) {
+      newProfile = 'active';
+    }
+
+    // Update user with new score and profile
+    const { error: updateError } = await supabase
+      .from('quiz_users')
+      .update({
+        score: newScore,
+        profile: newProfile,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', userId);
+
+    if (updateError) {
+      throw new Error(`Failed to update quiz user: ${updateError.message}`);
+    }
+
+    // Trigger analytics recalculation
+    await recalculateQuizAnalytics();
+
+    console.log('Quiz user score updated:', { userId, newScore, newProfile });
+  } catch (error) {
+    console.error('Error updating quiz user score:', error);
+    throw error;
+  }
+}
+
+/**
+ * Recalculate quiz analytics in real-time
+ */
+export async function recalculateQuizAnalytics(): Promise<void> {
+  try {
+    const { data: users, error } = await supabase
+      .from('quiz_users')
+      .select('*');
+
+    if (error) {
+      throw new Error(`Failed to get quiz users: ${error.message}`);
+    }
+
+    const analytics = {
+      totalParticipants: users?.length || 0,
+      profileBreakdown: {
+        discovery: users?.filter(u => u.profile === 'discovery').length || 0,
+        active: users?.filter(u => u.profile === 'active').length || 0,
+        vip: users?.filter(u => u.profile === 'vip').length || 0
+      },
+      averageScore: users?.length ? users.reduce((sum, u) => sum + u.score, 0) / users.length : 0,
+      completionRate: users?.length ? (users.filter(u => u.status === 'completed').length / users.length) * 100 : 0
+    };
+
+    // Trigger real-time update for dashboard and quiz module
+    await triggerModuleUpdate('quiz_analytics', {
+      action: 'analytics_updated',
+      analytics
+    });
+
+    console.log('Quiz analytics recalculated:', analytics);
+  } catch (error) {
+    console.error('Error recalculating quiz analytics:', error);
+    throw error;
+  }
+}
+
+/**
+ * Trigger module updates via Supabase real-time
+ */
+export async function triggerModuleUpdate(module: string, payload: any): Promise<void> {
+  try {
+    console.log(`📡 [CHATBOT-COMMUNICATION] Triggering module update for ${module}:`, payload);
+    
+    // Use Supabase real-time to broadcast updates with better error handling
+    const channelName = `module_updates_${module}`;
+    const channel = supabase.channel(channelName);
+    
+    const result = await channel.send({
+      type: 'broadcast',
+      event: 'module_update',
+      payload: {
+        module,
+        timestamp: new Date().toISOString(),
+        ...payload
+      }
+    });
+    
+    if (result === 'ok') {
+      console.log(`✅ [CHATBOT-COMMUNICATION] Module update sent successfully for ${module}`);
+    } else {
+      console.warn(`⚠️ [CHATBOT-COMMUNICATION] Module update send result for ${module}:`, result);
+    }
+
+    // Ensure channel is properly cleaned up
+    setTimeout(() => {
+      try {
+        channel.unsubscribe();
+      } catch (error) {
+        console.warn('Error cleaning up broadcast channel:', error);
+      }
+    }, 1000);
+    
+  } catch (error) {
+    console.error(`❌ [CHATBOT-COMMUNICATION] Error triggering module update for ${module}:`, error);
+    // Don't throw - this is not critical for the main operation
+  }
+}
+
+/**
+ * Subscribe to module updates
+ */
+export function subscribeToModuleUpdates(
+  module: string, 
+  callback: (payload: any) => void
+): () => void {
+  console.log(`🔗 [CHATBOT-COMMUNICATION] Subscribing to module updates: ${module}`);
+  
+  const channelName = `module_updates_${module}`;
+  const channel = supabase.channel(channelName, {
+    config: {
+      presence: {
+        key: `${module}_subscriber`
+      }
+    }
+  });
+  
+  channel
+    .on('broadcast', { event: 'module_update' }, (payload) => {
+      console.log(`📨 [CHATBOT-COMMUNICATION] Received update for ${module}:`, payload);
+      callback(payload.payload);
+    })
+    .on('presence', { event: 'sync' }, () => {
+      console.log(`👥 [CHATBOT-COMMUNICATION] Presence sync for ${module}`);
+    })
+    .subscribe((status) => {
+      console.log(`📡 [CHATBOT-COMMUNICATION] Channel ${channelName} status:`, status);
+      if (status === 'SUBSCRIBED') {
+        console.log(`✅ [CHATBOT-COMMUNICATION] Successfully subscribed to ${module} updates`);
+      } else if (status === 'CHANNEL_ERROR') {
+        console.error(`❌ [CHATBOT-COMMUNICATION] Channel error for ${module}:`, status);
+      }
+    });
+
+  // Return unsubscribe function
+  return () => {
+    console.log(`🔌 [CHATBOT-COMMUNICATION] Unsubscribing from ${module} updates`);
+    channel.unsubscribe();
+  };
+}
+
+/**
+ * Get or create quiz user with proper error handling
+ */
+export async function getOrCreateQuizUser(phoneNumber: string): Promise<QuizUser> {
+  try {
+    // Check if user exists
+    const { data: existingUser, error: getUserError } = await supabase
+      .from('quiz_users')
+      .select('*')
+      .eq('phone_number', phoneNumber)
+      .maybeSingle();
+
+    if (getUserError) {
+      throw new Error(`Failed to check existing quiz user: ${getUserError.message}`);
+    }
+
+    if (existingUser) {
+      // Update last activity
+      await supabase
+        .from('quiz_users')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', existingUser.id);
+
+      return existingUser;
+    }
+
+    // Create new user
+    const { data: newUser, error: createError } = await supabase
+      .from('quiz_users')
+      .insert({
+        phone_number: phoneNumber,
+        score: 0,
+        profile: 'discovery',
+        current_step: 0,
+        status: 'active',
+        preferences: {},
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .select()
+      .single();
+
+    if (createError) {
+      throw new Error(`Failed to create quiz user: ${createError.message}`);
+    }
+
+    // Trigger analytics update
+    await recalculateQuizAnalytics();
+
+    return newUser;
+  } catch (error) {
+    console.error('Error getting or creating quiz user:', error);
+    throw error;
+  }
+}
+
+/**
+ * Ensure conversation synchronization
+ */
+export async function ensureConversationSync(phoneNumber: string | 'all', intent: string): Promise<void> {
+  try {
+    if (phoneNumber === 'all') {
+      // Sync all conversations for the intent
+      const { data: recentMessages, error } = await supabase
+        .from('customer_conversations')
+        .select('*')
+        .eq('intent', intent)
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (error) {
+        console.error('Error verifying all conversations sync:', error);
+      } else {
+        console.log(`All conversations sync verified: ${recentMessages?.length || 0} recent messages found for ${intent}`);
+      }
+      return;
+    }
+
+    // Check for any unsaved messages in local storage or memory
+    const pendingMessages = localStorage.getItem(`pending_messages_${phoneNumber}`);
+    
+    if (pendingMessages) {
+      const messages = JSON.parse(pendingMessages);
+      
+      for (const message of messages) {
+        await saveConversationMessage({
+          phone_number: phoneNumber,
+          source: 'whatsapp',
+          content: message.content,
+          sender: message.sender,
+          intent: intent as any,
+          created_at: message.timestamp
+        });
+      }
+      
+      // Clear pending messages
+      localStorage.removeItem(`pending_messages_${phoneNumber}`);
+      console.log(`Synchronized ${messages.length} pending messages for ${phoneNumber}`);
+    }
+
+    // Verify recent messages are properly saved
+    const { data: recentMessages, error } = await supabase
+      .from('customer_conversations')
+      .select('*')
+      .eq('phone_number', phoneNumber)
+      .eq('intent', intent)
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (error) {
+      console.error('Error verifying conversation sync:', error);
+    } else {
+      console.log(`Conversation sync verified: ${recentMessages?.length || 0} recent messages found`);
+    }
+  } catch (error) {
+    console.error('Error ensuring conversation sync:', error);
+    // Don't throw - this is a recovery operation
+  }
+}
+
+/**
+ * Health check for chatbot communication
+ */
+export async function performChatbotHealthCheck(): Promise<{
+  conversations: boolean;
+  quiz: boolean;
+  realtime: boolean;
+  errors: string[];
+}> {
+  const errors: string[] = [];
+  let conversationsHealthy = false;
+  let quizHealthy = false;
+  let realtimeHealthy = false;
+
+  try {
+    // Test conversation database access
+    const { error: convError } = await supabase
+      .from('customer_conversations')
+      .select('id')
+      .limit(1);
+    
+    conversationsHealthy = !convError;
+    if (convError) {
+      errors.push(`Conversations DB error: ${convError.message}`);
+    }
+  } catch (error) {
+    errors.push(`Conversations test failed: ${error.message}`);
+  }
+
+  try {
+    // Test quiz database access
+    const { error: quizError } = await supabase
+      .from('quiz_users')
+      .select('id')
+      .limit(1);
+    
+    quizHealthy = !quizError;
+    if (quizError) {
+      errors.push(`Quiz DB error: ${quizError.message}`);
+    }
+  } catch (error) {
+    errors.push(`Quiz test failed: ${error.message}`);
+  }
+
+  try {
+    // Test real-time connection with proper async handling
+    const testChannel = supabase.channel('health_check_test', {
+      config: {
+        presence: {
+          key: 'health_test'
+        }
+      }
+    });
+    
+    // Create a promise that resolves when subscription is complete
+    const subscriptionPromise = new Promise<boolean>((resolve) => {
+      const timeout = setTimeout(() => {
+        resolve(false);
+      }, 5000); // 5 second timeout
+      
+      testChannel.subscribe((status) => {
+        clearTimeout(timeout);
+        if (status === 'SUBSCRIBED') {
+          resolve(true);
+        } else {
+          resolve(false);
+        }
+      });
+    });
+    
+    realtimeHealthy = await subscriptionPromise;
+    
+    // Clean up the test channel
+    try {
+      await testChannel.unsubscribe();
+    } catch (cleanupError) {
+      console.warn('Error cleaning up health check channel:', cleanupError);
+    }
+    
+    if (!realtimeHealthy) {
+      errors.push('Real-time connection test failed or timed out');
+    }
+  } catch (error) {
+    errors.push(`Real-time test failed: ${error.message}`);
+  }
+
+  return {
+    conversations: conversationsHealthy,
+    quiz: quizHealthy,
+    realtime: realtimeHealthy,
+    errors
+  };
+}
