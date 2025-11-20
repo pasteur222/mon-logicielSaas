@@ -7,6 +7,9 @@ export default defineConfig({
     exclude: ['lucide-react'],
   },
   preview: {
-    allowedHosts: ['mon-logicielsaas.onrender.com'],
+    allowedHosts: [
+      'mon-logicielsaas.onrender.com',
+      'mon-logicielsaas-9pjq.onrender.com'
+    ],
   },
 });
