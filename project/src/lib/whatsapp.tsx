@@ -1,5 +1,4 @@
 import { supabase } from './supabase';
-import { uploadMediaToFirebase, validateFirebaseConfig } from './firebase-config';
 import { determineChatbotType, trackChatbotUsage } from './chatbot-router';
 import { processCustomerServiceMessage } from './customer-service-chatbot';
 import { processQuizMessage } from './quiz-chatbot';
@@ -723,51 +722,89 @@ export async function sendWhatsAppMessages(
               url: msg.media.url.substring(0, 50) + '...'
             });
             
-            // Validate URL before sending with timeout
+            // Validate URL before sending with timeout (NON-BLOCKING)
             try {
               new URL(msg.media.url);
-              
-              // Test URL accessibility with timeout
+
+              console.log(`🔍 [WHATSAPP-SEND] Validating media URL (non-blocking):`, {
+                url: msg.media.url.substring(0, 70) + '...'
+              });
+
+              // Test URL accessibility with timeout (NON-BLOCKING)
               const urlTestController = new AbortController();
-              const urlTestTimeoutId = setTimeout(() => urlTestController.abort(), 5000); // 5 second timeout for URL test
-              
-              const urlTest = await fetch(msg.media.url, { 
-                method: 'HEAD',
-                headers: {
-                  'User-Agent': 'WhatsApp-Media-Validator/1.0'
-                },
-                signal: urlTestController.signal
-              });
-              
-              clearTimeout(urlTestTimeoutId);
-              
-              if (!urlTest.ok) {
-                throw new Error(`Media URL not accessible: ${urlTest.status} ${urlTest.statusText}`);
+              const urlTestTimeoutId = setTimeout(() => urlTestController.abort(), 5000);
+
+              try {
+                const urlTest = await fetch(msg.media.url, {
+                  method: 'HEAD',
+                  headers: {
+                    'User-Agent': 'WhatsApp-Media-Validator/1.0'
+                  },
+                  signal: urlTestController.signal
+                });
+
+                clearTimeout(urlTestTimeoutId);
+
+                if (!urlTest.ok) {
+                  console.warn(`⚠️ [WHATSAPP-SEND] Media URL validation returned non-200 status:`, {
+                    url: msg.media.url.substring(0, 70) + '...',
+                    status: urlTest.status,
+                    statusText: urlTest.statusText
+                  });
+                  console.warn(`⚠️ [WHATSAPP-SEND] Proceeding with send anyway - WhatsApp will validate`);
+                } else {
+                  const contentType = urlTest.headers.get('content-type');
+                  console.log(`✅ [WHATSAPP-SEND] Media URL validated:`, {
+                    url: msg.media.url.substring(0, 70) + '...',
+                    contentType,
+                    status: urlTest.status
+                  });
+                }
+              } catch (urlTestError) {
+                clearTimeout(urlTestTimeoutId);
+                console.warn(`⚠️ [WHATSAPP-SEND] Media URL validation failed:`, {
+                  url: msg.media.url.substring(0, 70) + '...',
+                  error: urlTestError.message
+                });
+                console.warn(`⚠️ [WHATSAPP-SEND] Proceeding with send anyway - WhatsApp will validate`);
               }
-              
-              const contentType = urlTest.headers.get('content-type');
-              console.log(`✅ [WHATSAPP-SEND] Media URL validated:`, {
-                url: msg.media.url,
-                contentType,
-                status: urlTest.status
-              });
-              
+
+              // Always set the media payload regardless of validation result
               messagePayload[msg.media.type] = { link: msg.media.url };
-              
+
               // Add caption if there's text content
               if (msg.message && msg.message.trim()) {
                 messagePayload[msg.media.type].caption = msg.message;
                 console.log(`📝 [WHATSAPP-SEND] Added caption to ${msg.media.type} message`);
               }
+
+              console.log(`📤 [WHATSAPP-SEND] Media payload prepared:`, {
+                type: msg.media.type,
+                hasCaption: !!(msg.message && msg.message.trim())
+              });
+
             } catch (urlError) {
-              if (urlError.name === 'AbortError') {
-                throw new Error('Media URL validation timeout');
+              // Only throw for truly invalid URLs (malformed)
+              if (urlError.name === 'TypeError' && urlError.message.includes('Invalid URL')) {
+                console.error(`❌ [WHATSAPP-SEND] Malformed media URL:`, {
+                  url: msg.media.url,
+                  error: urlError.message
+                });
+                throw new Error(`Malformed media URL: ${urlError.message}`);
               }
-              console.error(`❌ [WHATSAPP-SEND] Invalid media URL:`, {
-                url: msg.media.url,
+
+              // For other errors, log warning but continue
+              console.warn(`⚠️ [WHATSAPP-SEND] Media URL processing warning:`, {
+                url: msg.media.url.substring(0, 70) + '...',
                 error: urlError.message
               });
-              throw new Error(`Invalid media URL: ${urlError.message}`);
+              console.warn(`⚠️ [WHATSAPP-SEND] Proceeding with send anyway`);
+
+              // Still set the payload
+              messagePayload[msg.media.type] = { link: msg.media.url };
+              if (msg.message && msg.message.trim()) {
+                messagePayload[msg.media.type].caption = msg.message;
+              }
             }
           } else {
             messagePayload.text = { body: msg.message };
@@ -808,18 +845,35 @@ export async function sendWhatsAppMessages(
           try {
             const logController = new AbortController();
             const logTimeoutId = setTimeout(() => logController.abort(), 5000); // 5 second timeout for logging
-            
+
+            // Enhanced logging with media tracking
+            const messagePreview = msg.media
+              ? `[${msg.media.type.toUpperCase()}] ${msg.message.substring(0, 80)}`
+              : msg.message.substring(0, 100);
+
             await supabase.from('message_logs').insert({
               status: 'sent',
               phone_number: msg.phoneNumber,
-              message_preview: msg.message.substring(0, 100),
+              message_preview: messagePreview,
               message_id: messageId,
+              metadata: {
+                has_media: !!msg.media,
+                media_type: msg.media?.type,
+                media_url: msg.media?.url,
+                timestamp: new Date().toISOString()
+              },
               created_at: new Date().toISOString()
             });
-            
+
             clearTimeout(logTimeoutId);
+
+            console.log('✅ [WHATSAPP-SEND] Message logged to database:', {
+              messageId,
+              hasMedia: !!msg.media,
+              mediaType: msg.media?.type
+            });
           } catch (logError) {
-            console.warn('Failed to log message (non-critical):', logError);
+            console.warn('⚠️ [WHATSAPP-SEND] Failed to log message (non-critical):', logError);
             // Don't throw - message was sent successfully
           }
           
@@ -844,16 +898,26 @@ export async function sendWhatsAppMessages(
             messageIndex: index + 1
           });
           
-          // Log the error with timeout protection
+          // Log the error with timeout protection and media info
           try {
             const logController = new AbortController();
             const logTimeoutId = setTimeout(() => logController.abort(), 3000); // 3 second timeout for error logging
-            
+
+            const messagePreview = msg.media
+              ? `[${msg.media.type.toUpperCase()}] ${msg.message.substring(0, 80)}`
+              : msg.message.substring(0, 100);
+
             await supabase.from('message_logs').insert({
               status: 'error',
               phone_number: msg.phoneNumber,
-              message_preview: msg.message.substring(0, 100),
+              message_preview: messagePreview,
               error: error.message,
+              metadata: {
+                has_media: !!msg.media,
+                media_type: msg.media?.type,
+                media_url: msg.media?.url,
+                error_timestamp: new Date().toISOString()
+              },
               created_at: new Date().toISOString()
             });
             
@@ -1409,34 +1473,158 @@ function getMockTemplates() {
 }
 
 /**
- * Upload media file to Firebase and get public URL for WhatsApp
+ * Upload media file to Supabase Storage and get public URL for WhatsApp
+ * CRITICAL: Uses Supabase instead of Firebase for truly public URLs that WhatsApp can access
  * @param file The media file to upload
+ * @param userId Optional user ID for organizing files
  * @returns Promise resolving to the public URL
  */
-export async function uploadWhatsAppMedia(file: File): Promise<string> {
+export async function uploadWhatsAppMedia(file: File, userId?: string): Promise<string> {
   try {
-    console.log('📤 [WHATSAPP-MEDIA] Starting Firebase upload:', {
+    console.log('📤 [WHATSAPP-MEDIA] Starting Supabase upload:', {
       fileName: file.name,
       fileSize: file.size,
-      fileType: file.type
+      fileType: file.type,
+      userId: userId || 'anonymous'
     });
 
-    // Validate Firebase configuration
-    if (!validateFirebaseConfig()) {
-      throw new Error('Firebase is not properly configured. Please check your environment variables.');
+    // Validate file type
+    const allowedTypes = [
+      'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+      'video/mp4', 'video/mov', 'video/avi', 'video/webm', 'video/quicktime',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    ];
+
+    if (!allowedTypes.includes(file.type)) {
+      throw new Error(`Unsupported file type: ${file.type}. Allowed types: images, videos, PDF, Word, Excel`);
     }
 
-    // Upload to Firebase Storage
-    const downloadURL = await uploadMediaToFirebase(file, 'whatsapp-media');
-    
-    console.log('✅ [WHATSAPP-MEDIA] Firebase upload successful:', {
-      fileName: file.name,
-      downloadURL: downloadURL.substring(0, 50) + '...'
+    // Validate file size (WhatsApp limit is 16MB for videos, 5MB for images, 100MB for documents)
+    const maxSizes: Record<string, number> = {
+      'image': 5 * 1024 * 1024,      // 5MB for images
+      'video': 16 * 1024 * 1024,     // 16MB for videos
+      'application': 100 * 1024 * 1024  // 100MB for documents
+    };
+
+    const fileCategory = file.type.split('/')[0];
+    const maxSize = maxSizes[fileCategory] || 16 * 1024 * 1024;
+
+    if (file.size > maxSize) {
+      throw new Error(`File size exceeds limit. Maximum ${Math.round(maxSize / 1024 / 1024)}MB for ${fileCategory} files`);
+    }
+
+    // Generate secure filename
+    const timestamp = Date.now();
+    const randomString = Math.random().toString(36).substring(2, 10);
+    const extension = file.name.split('.').pop()?.toLowerCase() || 'bin';
+    const sanitizedName = file.name.split('.')[0].replace(/[^a-zA-Z0-9-_]/g, '_').substring(0, 50);
+    const fileName = `${timestamp}-${randomString}-${sanitizedName}.${extension}`;
+
+    // Organize by user folder
+    const folder = userId || 'public';
+    const filePath = `${folder}/${fileName}`;
+
+    console.log('📁 [WHATSAPP-MEDIA] Uploading to Supabase:', {
+      bucket: 'whatsapp-media',
+      path: filePath,
+      size: `${(file.size / 1024 / 1024).toFixed(2)}MB`
     });
 
-    return downloadURL;
+    // Determine correct MIME type (explicit mapping)
+    const getMimeType = (file: File): string => {
+      // First try file.type
+      if (file.type && file.type !== 'application/octet-stream') {
+        console.log('📋 [WHATSAPP-MEDIA] Using file.type:', file.type);
+        return file.type;
+      }
+
+      // Fallback: determine from extension
+      const extension = file.name.split('.').pop()?.toLowerCase() || '';
+      const mimeTypes: Record<string, string> = {
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'png': 'image/png',
+        'gif': 'image/gif',
+        'webp': 'image/webp',
+        'mp4': 'video/mp4',
+        'mov': 'video/quicktime',
+        'avi': 'video/x-msvideo',
+        'webm': 'video/webm',
+        'pdf': 'application/pdf',
+        'doc': 'application/msword',
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'xls': 'application/vnd.ms-excel',
+        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      };
+
+      const mimeType = mimeTypes[extension] || 'application/octet-stream';
+      console.log('📋 [WHATSAPP-MEDIA] Determined MIME type from extension:', {
+        extension,
+        mimeType
+      });
+      return mimeType;
+    };
+
+    const determinedMimeType = getMimeType(file);
+
+    console.log('📋 [WHATSAPP-MEDIA] Final MIME type for upload:', {
+      fileName: file.name,
+      fileType: file.type,
+      determinedMimeType
+    });
+
+    // Upload to Supabase Storage with explicit MIME type
+    const { data, error } = await supabase.storage
+      .from('whatsapp-media')
+      .upload(filePath, file, {
+        cacheControl: 'max-age=31536000',
+        upsert: false,
+        contentType: determinedMimeType
+      });
+
+    if (error) {
+      console.error('❌ [WHATSAPP-MEDIA] Supabase upload error:', error);
+      throw new Error(`Failed to upload to Supabase: ${error.message}`);
+    }
+
+    if (!data || !data.path) {
+      throw new Error('Upload succeeded but no path returned from Supabase');
+    }
+
+    // Generate public URL
+    const { data: { publicUrl } } = supabase.storage
+      .from('whatsapp-media')
+      .getPublicUrl(data.path);
+
+    console.log('✅ [WHATSAPP-MEDIA] Supabase upload successful:', {
+      fileName: file.name,
+      path: data.path,
+      publicUrl: publicUrl.substring(0, 70) + '...',
+      size: `${(file.size / 1024 / 1024).toFixed(2)}MB`
+    });
+
+    // Verify URL is accessible
+    try {
+      const urlTest = await fetch(publicUrl, { method: 'HEAD' });
+      if (!urlTest.ok) {
+        console.warn('⚠️ [WHATSAPP-MEDIA] Public URL returned non-200 status:', urlTest.status);
+      } else {
+        console.log('✅ [WHATSAPP-MEDIA] Public URL verified accessible:', {
+          status: urlTest.status,
+          contentType: urlTest.headers.get('content-type')
+        });
+      }
+    } catch (urlError) {
+      console.warn('⚠️ [WHATSAPP-MEDIA] Could not verify URL accessibility:', urlError.message);
+    }
+
+    return publicUrl;
   } catch (error) {
-    console.error('❌ [WHATSAPP-MEDIA] Firebase upload failed:', error);
-    throw new Error(`Failed to upload media to Firebase: ${error.message}`);
+    console.error('❌ [WHATSAPP-MEDIA] Upload failed:', error);
+    throw new Error(`Failed to upload media: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }

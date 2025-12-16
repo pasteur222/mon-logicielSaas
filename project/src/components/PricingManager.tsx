@@ -46,7 +46,7 @@ const PricingManager: React.FC<PricingManagerProps> = ({ onClose }) => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [currency, setCurrency] = useState<'FCFA' | 'USD'>('FCFA');
-  const [activeTab, setActiveTab] = useState<'business' | 'education'>('business');
+  const [activeTab, setActiveTab] = useState<'business'>('business');
   const exchangeRate = 0.00165; // 1 FCFA = 0.00165 USD (approximate)
 
   useEffect(() => {
@@ -305,27 +305,8 @@ const PricingManager: React.FC<PricingManagerProps> = ({ onClose }) => {
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-semibold text-gray-900">Gestion des Prix d'Abonnement</h2>
         <div className="flex items-center gap-4">
-          <div className="flex border border-gray-200 rounded-lg overflow-hidden">
-            <button
-              onClick={() => setActiveTab('business')}
-              className={`px-4 py-2 ${
-                activeTab === 'business' 
-                  ? 'bg-red-600 text-white' 
-                  : 'bg-white text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              Professionnel
-            </button>
-            <button
-              onClick={() => setActiveTab('education')}
-              className={`px-4 py-2 ${
-                activeTab === 'education' 
-                  ? 'bg-red-600 text-white' 
-                  : 'bg-white text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              Éducatif
-            </button>
+          <div className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium">
+            Abonnements Professionnels
           </div>
           
           <button
@@ -352,8 +333,7 @@ const PricingManager: React.FC<PricingManagerProps> = ({ onClose }) => {
         </div>
       )}
 
-      {activeTab === 'business' ? (
-        <div className="space-y-6">
+      <div className="space-y-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Plan Basique ({currency})
@@ -405,60 +385,6 @@ const PricingManager: React.FC<PricingManagerProps> = ({ onClose }) => {
             </div>
           </div>
         </div>
-      ) : (
-        <div className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Forfait Journalier ({currency})
-            </label>
-            <div className="relative">
-              <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="number"
-                value={educationPrices.daily}
-                onChange={(e) => setEducationPrices({ ...educationPrices, daily: parseFloat(e.target.value) || 0 })}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                min="0"
-                step={currency === 'FCFA' ? '100' : '0.1'}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Forfait Hebdomadaire ({currency})
-            </label>
-            <div className="relative">
-              <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="number"
-                value={educationPrices.weekly}
-                onChange={(e) => setEducationPrices({ ...educationPrices, weekly: parseFloat(e.target.value) || 0 })}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                min="0"
-                step={currency === 'FCFA' ? '500' : '0.5'}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Forfait Mensuel ({currency})
-            </label>
-            <div className="relative">
-              <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="number"
-                value={educationPrices.monthly}
-                onChange={(e) => setEducationPrices({ ...educationPrices, monthly: parseFloat(e.target.value) || 0 })}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                min="0"
-                step={currency === 'FCFA' ? '1000' : '1'}
-              />
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="flex justify-end gap-4 pt-4 border-t border-gray-200 mt-6">
         <button

@@ -104,8 +104,11 @@ export async function processCustomerServiceMessage(message: CustomerServiceMess
       }
     }
 
-    // Create Groq client
-    const groq = await createGroqClient(userId);
+    // Create Groq client and get configured model
+    const groqConfig = await createGroqClient(userId);
+    const groq = groqConfig.client;
+    const model = groqConfig.model;
+    console.log('🎯 [CUSTOMER-SERVICE] Using configured model:', model);
 
     let response;
 
@@ -132,7 +135,7 @@ export async function processCustomerServiceMessage(message: CustomerServiceMess
           },
           { role: "user", content: `Message client: "${message.content}"\nRéponse automatique: "${autoReplyResponse}"` }
         ],
-        model: 'llama3-70b-8192',
+        model: model, // ✅ Use user's configured model
         temperature: 0.7,
         max_tokens: 1500,
       });
@@ -157,7 +160,7 @@ export async function processCustomerServiceMessage(message: CustomerServiceMess
           },
           { role: "user", content: message.content }
         ],
-        model: 'llama3-70b-8192',
+        model: model, // ✅ Use user's configured model
         temperature: 0.7,
         max_tokens: 1500,
       });

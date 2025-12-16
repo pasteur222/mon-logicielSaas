@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useAppSettings } from './AppSettingsContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import LanguageSelector from './LanguageSelector';
+import { getFilteredMenuItems } from '../lib/access-control';
 
 interface MenuItem {
   icon: React.ElementType;
@@ -23,8 +24,23 @@ const Sidebar: React.FC<SidebarProps> = ({ menuItems }) => {
   const [filteredItems, setFilteredItems] = useState<MenuItem[]>([]);
 
   useEffect(() => {
-    // Show all menu items to all authenticated users
-    setFilteredItems(menuItems);
+    const filterMenuItems = async () => {
+      if (!user?.id) {
+        setFilteredItems([]);
+        return;
+      }
+
+      try {
+        const filtered = await getFilteredMenuItems(user.id, menuItems);
+        setFilteredItems(filtered);
+      } catch (error) {
+        console.error('Error filtering menu items:', error);
+        // Fallback: show all items
+        setFilteredItems(menuItems);
+      }
+    };
+
+    filterMenuItems();
   }, [user, menuItems]);
 
   // Translate menu item labels

@@ -227,8 +227,8 @@ const CampaignManager: React.FC<CampaignManagerProps> = ({ onClose }) => {
         fileType: file.type
       });
 
-      // Upload to Firebase and get public URL
-      const mediaUrl = await uploadWhatsAppMedia(file);
+      // Upload to Supabase Storage and get public URL
+      const mediaUrl = await uploadWhatsAppMedia(file, user?.id);
       
       // Determine media type
       let mediaType: 'image' | 'video' | 'document' = 'document';

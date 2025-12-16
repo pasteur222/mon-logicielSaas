@@ -6,10 +6,4 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['lucide-react'],
   },
-  preview: {
-    allowedHosts: [
-      'mon-logicielsaas.onrender.com',
-      'mon-logicielsaas-9pjq.onrender.com'
-    ],
-  },
 });

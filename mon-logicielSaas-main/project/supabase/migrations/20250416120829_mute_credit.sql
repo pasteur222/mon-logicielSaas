@@ -1,1 +1,0 @@
--- Fichier neutralisé pour éviter les erreurs (confirmed_at / new_admin)

@@ -41,7 +41,40 @@ export interface QuizUser {
 }
 
 /**
- * Save conversation message with guaranteed persistence
+ * Check for duplicate messages to prevent double-saves
+ */
+async function checkDuplicateMessage(message: ChatbotMessage): Promise<string | null> {
+  try {
+    let query = supabase
+      .from('customer_conversations')
+      .select('id')
+      .eq('content', message.content)
+      .eq('sender', message.sender)
+      .eq('intent', message.intent)
+      .gte('created_at', new Date(Date.now() - 10000).toISOString()); // Within last 10 seconds
+
+    if (message.phone_number) {
+      query = query.eq('phone_number', message.phone_number);
+    } else if (message.web_user_id) {
+      query = query.eq('web_user_id', message.web_user_id);
+    }
+
+    const { data, error } = await query.maybeSingle();
+
+    if (error) {
+      console.error('Error checking duplicate message:', error);
+      return null;
+    }
+
+    return data?.id || null;
+  } catch (error) {
+    console.error('Exception checking duplicate message:', error);
+    return null;
+  }
+}
+
+/**
+ * Save conversation message with guaranteed persistence and deduplication
  */
 export async function saveConversationMessage(message: ChatbotMessage): Promise<string> {
   try {
@@ -54,11 +87,18 @@ export async function saveConversationMessage(message: ChatbotMessage): Promise<
       contentLength: message.content?.length || 0
     });
 
+    // Check for existing duplicate message
+    const existingId = await checkDuplicateMessage(message);
+    if (existingId) {
+      console.log('✅ [CHATBOT-COMMUNICATION] Duplicate message detected, returning existing ID:', existingId);
+      return existingId;
+    }
+
     // Add timeout protection for database operations
     const saveWithTimeout = async () => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
-      
+
       try {
         const result = await supabase
           .from('customer_conversations')
@@ -76,7 +116,7 @@ export async function saveConversationMessage(message: ChatbotMessage): Promise<
           })
           .select('id')
           .single();
-        
+
         clearTimeout(timeoutId);
         return result;
       } catch (error) {

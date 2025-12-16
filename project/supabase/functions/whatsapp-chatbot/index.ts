@@ -1,5 +1,5 @@
-import { serve } from "https://deno.land/std@0.192.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.6";
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "npm:@supabase/supabase-js@2";
 
 console.log("Edge function 'whatsapp-chatbot' is running...");
 
@@ -10,7 +10,356 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS"
 };
 
-serve(async (req) => {
+/**
+ * Process quiz messages - handles quiz flow including starting, answering, and completing
+ */
+interface ProcessQuizMessageParams {
+  phoneNumber: string;
+  content: string;
+  userId: string;
+}
+
+async function processQuizMessage(params: ProcessQuizMessageParams): Promise<string> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error('Missing Supabase environment variables');
+  }
+
+  const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+  const lowerContent = params.content.toLowerCase().trim();
+  const quizStartKeywords = ['quiz', 'game', 'jeu', 'jouer', 'play', 'start', 'démarrer', 'commencer'];
+
+  const isQuizStart = quizStartKeywords.some(keyword => lowerContent.includes(keyword));
+
+  if (isQuizStart) {
+    const { data: activeQuiz } = await supabase
+      .from('quiz_sessions')
+      .select('id, completion_status')
+      .eq('phone_number', params.phoneNumber)
+      .eq('completion_status', 'active')
+      .is('end_time', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (activeQuiz) {
+      const { data: questions } = await supabase
+        .from('quiz_questions')
+        .select('*')
+        .eq('quiz_id', activeQuiz.id)
+        .order('order_index', { ascending: true })
+        .limit(1);
+
+      if (questions && questions.length > 0) {
+        const question = questions[0];
+        return `✨ Bienvenue au quiz ! Vous avez déjà une session active.\n\nQuestion ${question.order_index + 1}: ${question.text}\n\nVeuillez répondre pour continuer.`;
+      }
+    }
+
+    const { data: availableQuiz } = await supabase
+      .from('quizzes')
+      .select('id, title, description, is_active')
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!availableQuiz) {
+      return "Désolé, aucun quiz n'est disponible pour le moment. Veuillez réessayer plus tard.";
+    }
+
+    const { data: newSession, error: sessionError } = await supabase
+      .from('quiz_sessions')
+      .insert({
+        phone_number: params.phoneNumber,
+        quiz_id: availableQuiz.id,
+        completion_status: 'active',
+        current_question_index: 0,
+        score: 0,
+        created_at: new Date().toISOString()
+      })
+      .select()
+      .single();
+
+    if (sessionError || !newSession) {
+      console.error('Error creating quiz session:', sessionError);
+      return "Désolé, impossible de démarrer le quiz. Veuillez réessayer.";
+    }
+
+    const { data: firstQuestion } = await supabase
+      .from('quiz_questions')
+      .select('*')
+      .eq('quiz_id', availableQuiz.id)
+      .order('order_index', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (!firstQuestion) {
+      return "Désolé, ce quiz ne contient pas encore de questions.";
+    }
+
+    let questionText = `🎯 ${availableQuiz.title}\n\n${availableQuiz.description}\n\n`;
+    questionText += `Question 1: ${firstQuestion.text}\n\n`;
+
+    if (firstQuestion.options && Array.isArray(firstQuestion.options)) {
+      firstQuestion.options.forEach((option: any, index: number) => {
+        questionText += `${index + 1}. ${option}\n`;
+      });
+      questionText += `\nRépondez avec le numéro de votre choix (1-${firstQuestion.options.length})`;
+    }
+
+    return questionText;
+  }
+
+  const { data: activeSession } = await supabase
+    .from('quiz_sessions')
+    .select('id, quiz_id, current_question_index, score')
+    .eq('phone_number', params.phoneNumber)
+    .eq('completion_status', 'active')
+    .is('end_time', null)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!activeSession) {
+    return "Vous n'avez pas de quiz actif. Envoyez 'quiz' ou 'game' pour commencer un nouveau quiz!";
+  }
+
+  const { data: currentQuestion } = await supabase
+    .from('quiz_questions')
+    .select('*')
+    .eq('quiz_id', activeSession.quiz_id)
+    .eq('order_index', activeSession.current_question_index)
+    .maybeSingle();
+
+  if (!currentQuestion) {
+    return "Erreur: Question introuvable. Envoyez 'quiz' pour recommencer.";
+  }
+
+  const userAnswer = params.content.trim();
+  let isCorrect = false;
+  let pointsEarned = 0;
+
+  if (currentQuestion.type === 'multiple_choice' && currentQuestion.options) {
+    const answerIndex = parseInt(userAnswer) - 1;
+    if (answerIndex >= 0 && answerIndex < currentQuestion.options.length) {
+      const selectedAnswer = currentQuestion.options[answerIndex];
+      isCorrect = selectedAnswer === currentQuestion.correct_answer;
+      pointsEarned = isCorrect ? (currentQuestion.points || 10) : 0;
+    }
+  }
+
+  await supabase
+    .from('quiz_answers')
+    .insert({
+      session_id: activeSession.id,
+      question_id: currentQuestion.id,
+      answer: userAnswer,
+      is_correct: isCorrect,
+      points_earned: pointsEarned,
+      created_at: new Date().toISOString()
+    });
+
+  const newScore = activeSession.score + pointsEarned;
+  const nextQuestionIndex = activeSession.current_question_index + 1;
+
+  const { data: nextQuestion } = await supabase
+    .from('quiz_questions')
+    .select('*')
+    .eq('quiz_id', activeSession.quiz_id)
+    .eq('order_index', nextQuestionIndex)
+    .maybeSingle();
+
+  if (!nextQuestion) {
+    await supabase
+      .from('quiz_sessions')
+      .update({
+        completion_status: 'completed',
+        score: newScore,
+        end_time: new Date().toISOString()
+      })
+      .eq('id', activeSession.id);
+
+    return `${isCorrect ? '✅ Correct!' : '❌ Incorrect!'}\n\n🎉 Quiz terminé!\n\nVotre score final: ${newScore} points\n\nMerci d'avoir participé! Envoyez 'quiz' pour recommencer.`;
+  }
+
+  await supabase
+    .from('quiz_sessions')
+    .update({
+      current_question_index: nextQuestionIndex,
+      score: newScore
+    })
+    .eq('id', activeSession.id);
+
+  let responseText = `${isCorrect ? '✅ Correct! +' + pointsEarned + ' points' : '❌ Incorrect!'}\n\n`;
+  responseText += `Score actuel: ${newScore} points\n\n`;
+  responseText += `Question ${nextQuestionIndex + 1}: ${nextQuestion.text}\n\n`;
+
+  if (nextQuestion.options && Array.isArray(nextQuestion.options)) {
+    nextQuestion.options.forEach((option: any, index: number) => {
+      responseText += `${index + 1}. ${option}\n`;
+    });
+    responseText += `\nRépondez avec le numéro (1-${nextQuestion.options.length})`;
+  }
+
+  return responseText;
+}
+
+/**
+ * CENTRALIZED ROUTER - Determines which chatbot should handle the message
+ *
+ * PRIORITY ORDER (CRITICAL - DO NOT CHANGE):
+ * 1. QUIZ PRIORITY: Active quiz session -> Route to quiz (user is mid-quiz)
+ * 2. QUIZ PRIORITY: Quiz trigger keywords -> Route to quiz (user wants to start)
+ * 3. CUSTOMER SERVICE: No quiz match -> Route to customer service
+ *
+ * Quiz chatbot takes FULL CONTROL when:
+ * - User has an active quiz session, OR
+ * - Message contains quiz trigger keywords
+ *
+ * Customer service chatbot responds when:
+ * - No active quiz session AND no quiz keywords
+ * - Checks auto-response rules first
+ * - Uses generic message if no auto-response match
+ *
+ * AI NEVER controls the quiz - only used for customer service fallback
+ */
+async function checkIfQuizMessage(
+  message: string,
+  phoneNumber: string,
+  supabaseClient: any
+): Promise<boolean> {
+  try {
+    console.log('🔍 [WHATSAPP-CHATBOT ROUTER] Starting message routing analysis...');
+    console.log(`📝 [WHATSAPP-CHATBOT ROUTER] Message: "${message.substring(0, 50)}..."`);
+    console.log(`📍 [WHATSAPP-CHATBOT ROUTER] Phone: ${phoneNumber}`);
+
+    // 1. Check for active quiz session (PRIORITY 1)
+    const { data: activeSessions, error: sessionError } = await supabaseClient
+      .from('quiz_sessions')
+      .select('id, completion_status')
+      .eq('phone_number', phoneNumber)
+      .eq('completion_status', 'active')
+      .is('end_time', null)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (sessionError) {
+      console.error('[WHATSAPP-CHATBOT ROUTER] Error checking quiz sessions:', sessionError);
+    }
+
+    const hasActiveSession = activeSessions && activeSessions.length > 0;
+
+    if (hasActiveSession) {
+      console.log('🎯 [WHATSAPP-CHATBOT ROUTER] ✅ ACTIVE QUIZ SESSION FOUND -> QUIZ (Priority 1)');
+      return true;
+    }
+
+    // 2. Check for active quiz user
+    const { data: activeUser, error: userError } = await supabaseClient
+      .from('quiz_users')
+      .select('id, status')
+      .eq('phone_number', phoneNumber)
+      .eq('status', 'active')
+      .maybeSingle();
+
+    if (userError) {
+      console.error('[WHATSAPP-CHATBOT ROUTER] Error checking quiz user:', userError);
+    }
+
+    const hasActiveUser = !!activeUser;
+
+    if (hasActiveUser) {
+      console.log('🎯 [WHATSAPP-CHATBOT ROUTER] ✅ ACTIVE QUIZ USER FOUND -> QUIZ (Priority 1)');
+      return true;
+    }
+
+    // 3. Check for quiz keywords (PRIORITY 2)
+    const lowerMessage = message.toLowerCase().trim();
+    const quizKeywords = [
+      'quiz', 'game', 'test', 'play', 'challenge', 'question', 'answer',
+      'jeu', 'défi', 'réponse', 'questionnaire', 'jouer', 'start', 'commencer',
+      'démarrer', 'begin', 'restart', 'recommencer'
+    ];
+
+    for (const keyword of quizKeywords) {
+      if (lowerMessage.includes(keyword)) {
+        console.log(`🎯 [WHATSAPP-CHATBOT ROUTER] ✅ QUIZ KEYWORD DETECTED: "${keyword}" -> QUIZ (Priority 2)`);
+        return true;
+      }
+    }
+
+    console.log('🎧 [WHATSAPP-CHATBOT ROUTER] ✅ No quiz match -> CUSTOMER SERVICE (Priority 3)');
+    return false;
+  } catch (error) {
+    console.error('[WHATSAPP-CHATBOT ROUTER] Error in checkIfQuizMessage:', error);
+    return false;
+  }
+}
+
+/**
+ * Check for auto-response rules in database
+ */
+async function checkAutoResponse(messageContent: string, userId: string, supabaseClient: any): Promise<string | null> {
+  try {
+    const lowerMessage = messageContent.toLowerCase().trim();
+
+    const { data: rules, error } = await supabaseClient
+      .from('auto_reply_rules')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('is_active', true)
+      .order('priority', { ascending: false });
+
+    if (error || !rules || rules.length === 0) {
+      console.log('📝 [WHATSAPP-CHATBOT] No auto-reply rules found');
+      return null;
+    }
+
+    for (const rule of rules) {
+      const keywords = rule.keywords || [];
+
+      for (const keyword of keywords) {
+        if (lowerMessage.includes(keyword.toLowerCase())) {
+          console.log(`✅ [WHATSAPP-CHATBOT] Auto-reply match found: ${keyword} -> ${rule.response_message}`);
+          return rule.response_message;
+        }
+      }
+    }
+
+    console.log('📝 [WHATSAPP-CHATBOT] No auto-reply match found');
+    return null;
+  } catch (error) {
+    console.error('❌ [WHATSAPP-CHATBOT] Error checking auto-response:', error);
+    return null;
+  }
+}
+
+/**
+ * Process customer service message with auto-responses
+ */
+async function processCustomerServiceMessage(
+  messageContent: string,
+  userId: string,
+  supabaseClient: any
+): Promise<string> {
+  console.log('🎧 [WHATSAPP-CHATBOT] Processing customer service message');
+
+  const autoResponse = await checkAutoResponse(messageContent, userId, supabaseClient);
+
+  if (autoResponse) {
+    console.log('✅ [WHATSAPP-CHATBOT] Using auto-response');
+    return autoResponse;
+  }
+
+  console.log('📨 [WHATSAPP-CHATBOT] No auto-response match, using generic message');
+  return "Merci pour votre message. Notre équipe de gestion des produits vous contactera sous peu concernant votre demande.";
+}
+
+Deno.serve(async (req) => {
   // Handle CORS preflight request
   if (req.method === 'OPTIONS') {
     return new Response(null, {
@@ -56,223 +405,49 @@ serve(async (req) => {
       });
     }
 
-    // 4. Get the Groq configuration for the user
-    const { data: groqConfig, error: groqError } = await supabaseAdmin
-      .from("user_groq_config")
-      .select("*")
-      .eq("user_id", userId)
-      .maybeSingle();
+    console.log(`[WHATSAPP-CHATBOT] Processing message for user: ${userId}`);
 
-    if (groqError) {
-      console.error("Error fetching Groq config:", groqError);
-    }
+    // 4. Determine if message should route to quiz processor
+    const shouldRouteToQuiz = await checkIfQuizMessage(userMessage, phoneNumber, supabaseAdmin);
 
-    // Use user's configuration or fallback to any available configuration
-    let apiKey = groqConfig?.api_key;
-    let model = groqConfig?.model || "llama3-70b-8192";
+    console.log(`🎯 [WHATSAPP-CHATBOT] *** ROUTER DECISION: ${shouldRouteToQuiz ? 'QUIZ' : 'CUSTOMER SERVICE'} ***`);
 
-    // If no user config found, try to get any available config
-    if (!apiKey) {
-      console.log("[WHATSAPP-CHATBOT] No user config found, trying system-wide config");
-      const { data: anyConfig, error: anyConfigError } = await supabaseAdmin
-        .from("user_groq_config")
-        .select("*")
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+    let aiResponse: string;
 
-      if (anyConfig && anyConfig.api_key) {
-        apiKey = anyConfig.api_key;
-        model = anyConfig.model || "llama3-70b-8192";
-        console.log(`[WHATSAPP-CHATBOT] Using fallback config from user: ${anyConfig.user_id}`);
-      } else {
-        // Last resort: use environment variable
-        apiKey = Deno.env.get("GROQ_API_KEY");
-        if (!apiKey) {
-          throw new Error("No Groq API key found in user config, system config, or environment variables");
-        }
-        console.log("[WHATSAPP-CHATBOT] Using environment variable GROQ_API_KEY");
-      }
-    }
+    if (shouldRouteToQuiz) {
+      console.log('🎯 [WHATSAPP-CHATBOT] ===== EXECUTING QUIZ PROCESSOR =====');
+      console.log('🎯 [WHATSAPP-CHATBOT] Quiz chatbot has FULL CONTROL');
+      console.log('🎯 [WHATSAPP-CHATBOT] AI will NOT interfere with quiz flow');
 
-    // Ensure we're not using deprecated models
-    const DEPRECATED_MODELS = ["mixtral-8x7b-32768"];
-    if (DEPRECATED_MODELS.includes(model)) {
-      console.warn(`[WHATSAPP-CHATBOT] [SECURITY] Detected deprecated model ${model}, switching to llama3-70b-8192`);
-      model = "llama3-70b-8192";
-      
-      // Update the database to prevent future issues
-      if (groqConfig?.user_id) {
-        try {
-          await supabaseAdmin
-            .from("user_groq_config")
-            .update({ model: "llama3-70b-8192" })
-            .eq("user_id", groqConfig.user_id);
-          console.log(`[WHATSAPP-CHATBOT] Updated user ${groqConfig.user_id}'s model to llama3-70b-8192`);
-        } catch (updateError) {
-          console.error("Failed to update deprecated model in database:", updateError);
-        }
-      }
-    }
-
-    console.log(`[WHATSAPP-CHATBOT] Using Groq model: ${model} for user ${userId}`);
-
-    // 5. Generate system prompt based on chatbot type
-    let systemPrompt = "";
-    switch (chatbotType) {
-      case "education":
-        systemPrompt = `You are an educational assistant specialized in helping students with their studies.
-Your goal is to provide clear, accurate explanations and guide students through their learning process.
-Be patient, encouraging, and adapt your explanations to different learning styles.`;
-        break;
-      case "quiz":
-        systemPrompt = `You are a quiz master who creates engaging educational quizzes.
-Your goal is to make learning fun through interactive questions and challenges.
-Be enthusiastic, encouraging, and provide informative feedback on answers.`;
-        break;
-      default:
-        systemPrompt = `You are a customer service assistant for a telecom company.
-Your goal is to help customers with their inquiries, issues, and requests.
-Be professional, courteous, and solution-oriented.`;
-    }
-
-    // 6. Make direct HTTP call to Groq API
-    const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: [
-          {
-            role: "system",
-            content: systemPrompt
-          },
-          {
-            role: "user",
-            content: userMessage
-          }
-        ],
-        temperature: 0.7,
-        max_tokens: 2048
-      })
-    }).catch(async (error) => {
-      console.error("[WHATSAPP-CHATBOT] Groq API error:", error);
-      
-      // If the error is about a decommissioned model, try again with the default model
-      if (error.message && (error.message.includes('decommissioned') || error.message.includes('deprecated'))) {
-        console.warn(`[WHATSAPP-CHATBOT] [RECOVERY] Model error detected, retrying with llama3-70b-8192`);
-        return fetch("https://api.groq.com/openai/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${apiKey}`,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            model: "llama3-70b-8192",
-            messages: [
-              {
-                role: "system",
-                content: systemPrompt
-              },
-              {
-                role: "user",
-                content: userMessage
-              }
-            ],
-            temperature: 0.7,
-            max_tokens: 2048
-          })
-        });
-      }
-      
-      throw error;
-    });
-
-    if (!groqResponse.ok) {
-      const errorData = await groqResponse.json();
-      console.error("[WHATSAPP-CHATBOT] Groq API error response:", errorData);
-      
-      // If the error is about a decommissioned model, try again with the default model
-      if (errorData.error?.message?.includes('decommissioned') || errorData.error?.message?.includes('deprecated')) {
-        console.warn(`[WHATSAPP-CHATBOT] [RECOVERY] Model error detected: ${errorData.error.message}`);
-        console.log('[WHATSAPP-CHATBOT] Retrying with llama3-70b-8192');
-        
-        const retryResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${apiKey}`,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            model: "llama3-70b-8192",
-            messages: [
-              {
-                role: "system",
-                content: systemPrompt
-              },
-              {
-                role: "user",
-                content: userMessage
-              }
-            ],
-            temperature: 0.7,
-            max_tokens: 2048
-          })
-        });
-        
-        if (!retryResponse.ok) {
-          const retryErrorData = await retryResponse.json();
-          throw new Error(`Groq API error after retry: ${JSON.stringify(retryErrorData)}`);
-        }
-        
-        const retryResult = await retryResponse.json();
-        const aiResponse = retryResult.choices[0]?.message?.content || "Je suis désolé, je n'ai pas pu générer une réponse appropriée.";
-        
-        // Update the user's model in the database to prevent future issues
-        if (groqConfig?.user_id) {
-          try {
-            await supabaseAdmin
-              .from("user_groq_config")
-              .update({ model: "llama3-70b-8192" })
-              .eq("user_id", groqConfig.user_id);
-            console.log(`[WHATSAPP-CHATBOT] Updated user ${groqConfig.user_id}'s model to llama3-70b-8192 after error`);
-          } catch (updateError) {
-            console.error("Failed to update model after error:", updateError);
-          }
-        }
-        
-        // Save the response to Supabase
-        const { error: saveError } = await supabaseAdmin.from("chatbot_logs").insert({
-          phone_number: phoneNumber,
-          message: userMessage,
-          response: aiResponse,
-          chatbot_type: chatbotType,
-          webhook_id: webhookId,
-          user_id: userId,
+      try {
+        aiResponse = await processQuizMessage({
+          phoneNumber: phoneNumber,
+          content: userMessage,
+          userId: userId
         });
 
-        if (saveError) {
-          console.error("Failed to save chatbot log:", saveError.message);
-        }
-
-        return new Response(JSON.stringify({ reply: aiResponse }), {
-          headers: { 
-            "Content-Type": "application/json",
-            ...corsHeaders
-          },
-        });
+        console.log('🎯 [WHATSAPP-CHATBOT] Quiz processor completed successfully');
+      } catch (quizError) {
+        console.error('❌ [WHATSAPP-CHATBOT] Quiz processing error:', quizError);
+        aiResponse = "Désolé, je rencontre des difficultés techniques avec le quiz. Veuillez réessayer plus tard.";
       }
-      
-      throw new Error(`Groq API error: ${JSON.stringify(errorData)}`);
+    } else {
+      console.log('🎧 [WHATSAPP-CHATBOT] ===== EXECUTING CUSTOMER SERVICE =====');
+      console.log('🎧 [WHATSAPP-CHATBOT] Checking auto-responses first...');
+
+      try {
+        aiResponse = await processCustomerServiceMessage(
+          userMessage,
+          userId,
+          supabaseAdmin
+        );
+
+        console.log('🎧 [WHATSAPP-CHATBOT] Customer service completed successfully');
+      } catch (csError) {
+        console.error('❌ [WHATSAPP-CHATBOT] Customer service error:', csError);
+        aiResponse = "Merci pour votre message. Notre équipe de gestion des produits vous contactera sous peu concernant votre demande.";
+      }
     }
-
-    const result = await groqResponse.json();
-    const aiResponse = result.choices[0]?.message?.content || "Je suis désolé, je n'ai pas pu générer une réponse appropriée.";
-
-    console.log(`[WHATSAPP-CHATBOT] Generated response using model ${model} for user ${userId}`);
 
     // 7. Save the response to Supabase
     const { error: saveError } = await supabaseAdmin.from("chatbot_logs").insert({

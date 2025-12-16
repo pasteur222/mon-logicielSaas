@@ -172,18 +172,130 @@ export async function deleteQuizQuestion(id: number): Promise<void> {
 
 export async function sendQuizToNumbers(phoneNumbers: string[], userId?: string): Promise<void> {
   try {
-    // Implementation for sending quiz to phone numbers
-    console.log('Sending quiz to numbers:', phoneNumbers);
-    
-    // This would integrate with the WhatsApp API to send quiz invitations
-    // For now, we'll just log the action
-    
-    // Track the quiz sending action
-    if (userId) {
-      await trackChatbotUsage(phoneNumbers[0], 'quiz');
+    console.log('📤 [QUIZ-MARKETING] Starting to send quiz invitations:', {
+      phoneCount: phoneNumbers.length,
+      userId: userId || 'not provided'
+    });
+
+    if (!phoneNumbers || phoneNumbers.length === 0) {
+      throw new Error('No phone numbers provided');
     }
+
+    // Get user's app settings for personalized messaging
+    let appName = 'notre plateforme';
+    try {
+      const { data: appSettings } = await supabase
+        .from('app_settings')
+        .select('app_name')
+        .limit(1)
+        .maybeSingle();
+
+      if (appSettings?.app_name) {
+        appName = appSettings.app_name;
+      }
+    } catch (error) {
+      console.warn('⚠️ [QUIZ-MARKETING] Could not fetch app name, using default');
+    }
+
+    // Get total number of quiz questions
+    const { count: questionCount } = await supabase
+      .from('quiz_questions')
+      .select('*', { count: 'exact', head: true });
+
+    // Create quiz invitation message
+    const quizInvitationMessage = `🎮 **Bienvenue au Quiz Interactif de ${appName}!**
+
+Nous sommes ravis de vous inviter à participer à notre quiz exclusif !
+
+📝 **Comment participer :**
+1. Répondez simplement "Game" pour commencer
+2. Répondez aux ${questionCount || 'quelques'} questions
+3. Obtenez votre score et votre profil
+
+🎯 **Pourquoi participer ?**
+✅ Découvrez votre profil personnalisé
+✅ Gagnez des points
+✅ Recevez des recommandations adaptées
+✅ Participez aux classements
+
+⏱️ **Temps estimé :** ${Math.ceil((questionCount || 5) * 0.5)} minutes
+
+💬 **Pour commencer, répondez simplement :**
+**"Game"**
+
+Bonne chance ! 🍀`;
+
+    // Import sendWhatsAppMessages function
+    const { sendWhatsAppMessages } = await import('./whatsapp');
+
+    // Prepare messages for all phone numbers
+    const messages = phoneNumbers.map(phoneNumber => ({
+      phoneNumber: phoneNumber.trim(),
+      message: quizInvitationMessage
+    }));
+
+    console.log('📨 [QUIZ-MARKETING] Sending quiz invitations to', messages.length, 'recipients');
+
+    // Send messages via WhatsApp
+    const results = await sendWhatsAppMessages(messages, userId);
+
+    // Count successes and failures
+    const successCount = results.filter(r => r.status === 'success').length;
+    const failureCount = results.filter(r => r.status === 'error').length;
+
+    console.log('✅ [QUIZ-MARKETING] Quiz invitations sent:', {
+      total: results.length,
+      successful: successCount,
+      failed: failureCount
+    });
+
+    // Track quiz sending action for each successful recipient
+    if (userId) {
+      for (const result of results) {
+        if (result.status === 'success') {
+          try {
+            await trackChatbotUsage(result.phoneNumber, 'quiz');
+          } catch (trackingError) {
+            console.warn('⚠️ [QUIZ-MARKETING] Failed to track chatbot usage:', trackingError);
+          }
+        }
+      }
+    }
+
+    // Log all results to message_logs for tracking
+    for (const result of results) {
+      try {
+        await supabase.from('message_logs').insert({
+          status: result.status === 'success' ? 'sent' : 'failed',
+          phone_number: result.phoneNumber,
+          message_preview: 'Quiz invitation: ' + quizInvitationMessage.substring(0, 80),
+          message_id: result.messageId || null,
+          error: result.error || null,
+          created_at: new Date().toISOString(),
+          metadata: {
+            campaign_type: 'quiz_invitation',
+            user_id: userId,
+            timestamp: result.timestamp.toISOString()
+          }
+        });
+      } catch (logError) {
+        console.warn('⚠️ [QUIZ-MARKETING] Failed to log message result:', logError);
+      }
+    }
+
+    // Throw error if all messages failed
+    if (failureCount === results.length) {
+      throw new Error(`Failed to send quiz invitations to all ${failureCount} recipients. Check your WhatsApp configuration.`);
+    }
+
+    // Partial success notification
+    if (failureCount > 0) {
+      console.warn(`⚠️ [QUIZ-MARKETING] Partial success: ${successCount} sent, ${failureCount} failed`);
+    }
+
+    console.log('🎉 [QUIZ-MARKETING] Quiz campaign completed successfully');
   } catch (error) {
-    console.error('Error sending quiz to numbers:', error);
+    console.error('❌ [QUIZ-MARKETING] Error sending quiz to numbers:', error);
     throw error;
   }
 }

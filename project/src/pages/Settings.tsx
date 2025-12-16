@@ -13,12 +13,15 @@ import AppSettingsManager from '../components/AppSettingsManager';
 import ContactManagement from '../components/ContactManagement';
 import AppearanceSettings from '../components/AppearanceSettings';
 import WebhookConfigForm from '../components/WebhookConfigForm';
+import { WebhookApiLinksManager } from '../components/WebhookApiLinksManager';
+import { getAllowedSettingsTabs } from '../lib/access-control';
 
 const Settings = () => {
   const { user, signOut } = useAuth();
   const [activeTab, setActiveTab] = useState('profile');
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [allowedTabs, setAllowedTabs] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -44,8 +47,26 @@ const Settings = () => {
       loadUserProfile();
       loadGroqConfig();
       loadWebhookConfig();
+      loadAllowedTabs();
     }
   }, [user]);
+
+  const loadAllowedTabs = async () => {
+    if (!user?.id) return;
+
+    try {
+      const tabs = await getAllowedSettingsTabs(user.id);
+      setAllowedTabs(tabs);
+    } catch (error) {
+      console.error('Error loading allowed tabs:', error);
+      // Fallback: allow basic tabs for all users
+      setAllowedTabs(['profile', 'whatsapp', 'webhook', 'contacts', 'security']);
+    }
+  };
+
+  const isTabAllowed = (tabName: string): boolean => {
+    return allowedTabs.includes(tabName);
+  };
 
   const loadUserProfile = async () => {
     try {
@@ -419,50 +440,58 @@ const Settings = () => {
                 <Webhook className="w-5 h-5" />
                 <span>Webhook</span>
               </button>
-              <button
-                onClick={() => setActiveTab('ai')}
-                className={`flex items-center gap-3 w-full px-4 py-2 text-left rounded-lg ${
-                  activeTab === 'ai'
-                    ? 'bg-yellow-50 text-yellow-600'
-                    : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                <Database className="w-5 h-5" />
-                <span>AI API</span>
-              </button>
-              <button
-                onClick={() => setActiveTab('pricing')}
-                className={`flex items-center gap-3 w-full px-4 py-2 text-left rounded-lg ${
-                  activeTab === 'pricing'
-                    ? 'bg-yellow-50 text-yellow-600'
-                    : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                <CreditCard className="w-5 h-5" />
-                <span>Tarification</span>
-              </button>
-              <button
-                onClick={() => setActiveTab('payment')}
-                className={`flex items-center gap-3 w-full px-4 py-2 text-left rounded-lg ${
-                  activeTab === 'payment'
-                    ? 'bg-yellow-50 text-yellow-600'
-                    : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                <CreditCard className="w-5 h-5" />
-                <span>API de Paiement</span>
-              </button>
-              <button
-                onClick={() => setActiveTab('analytics')}
-                className={`flex items-center gap-3 w-full px-4 py-2 text-left rounded-lg ${
-                  activeTab === 'analytics'
-                    ? 'bg-yellow-50 text-yellow-600'
-                    : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                <BarChart2 className="w-5 h-5" />
-                <span>Analytiques</span>
-              </button>
+              {isTabAllowed('groq') && (
+                <button
+                  onClick={() => setActiveTab('ai')}
+                  className={`flex items-center gap-3 w-full px-4 py-2 text-left rounded-lg ${
+                    activeTab === 'ai'
+                      ? 'bg-yellow-50 text-yellow-600'
+                      : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  <Database className="w-5 h-5" />
+                  <span>AI API</span>
+                </button>
+              )}
+              {isTabAllowed('pricing') && (
+                <button
+                  onClick={() => setActiveTab('pricing')}
+                  className={`flex items-center gap-3 w-full px-4 py-2 text-left rounded-lg ${
+                    activeTab === 'pricing'
+                      ? 'bg-yellow-50 text-yellow-600'
+                      : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  <CreditCard className="w-5 h-5" />
+                  <span>Tarification</span>
+                </button>
+              )}
+              {isTabAllowed('payment') && (
+                <button
+                  onClick={() => setActiveTab('payment')}
+                  className={`flex items-center gap-3 w-full px-4 py-2 text-left rounded-lg ${
+                    activeTab === 'payment'
+                      ? 'bg-yellow-50 text-yellow-600'
+                      : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  <CreditCard className="w-5 h-5" />
+                  <span>API de Paiement</span>
+                </button>
+              )}
+              {isTabAllowed('analytics') && (
+                <button
+                  onClick={() => setActiveTab('analytics')}
+                  className={`flex items-center gap-3 w-full px-4 py-2 text-left rounded-lg ${
+                    activeTab === 'analytics'
+                      ? 'bg-yellow-50 text-yellow-600'
+                      : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  <BarChart2 className="w-5 h-5" />
+                  <span>Analytiques</span>
+                </button>
+              )}
               <button
                 onClick={() => setActiveTab('contacts')}
                 className={`flex items-center gap-3 w-full px-4 py-2 text-left rounded-lg ${
@@ -474,17 +503,19 @@ const Settings = () => {
                 <User className="w-5 h-5" />
                 <span>Contacts</span>
               </button>
-              <button
-                onClick={() => setActiveTab('app')}
-                className={`flex items-center gap-3 w-full px-4 py-2 text-left rounded-lg ${
-                  activeTab === 'app'
-                    ? 'bg-yellow-50 text-yellow-600'
-                    : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                <Globe className="w-5 h-5" />
-                <span>Paramètres App</span>
-              </button>
+              {isTabAllowed('app') && (
+                <button
+                  onClick={() => setActiveTab('app')}
+                  className={`flex items-center gap-3 w-full px-4 py-2 text-left rounded-lg ${
+                    activeTab === 'app'
+                      ? 'bg-yellow-50 text-yellow-600'
+                      : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  <Globe className="w-5 h-5" />
+                  <span>Paramètres App</span>
+                </button>
+              )}
               <button
                 onClick={() => setActiveTab('security')}
                 className={`flex items-center gap-3 w-full px-4 py-2 text-left rounded-lg ${
@@ -604,22 +635,26 @@ const Settings = () => {
             )}
 
             {activeTab === 'webhook' && (
-              <div className="bg-white rounded-xl shadow-sm p-6">
-                <h2 className="text-xl font-semibold text-gray-900 mb-6">Webhook Configuration</h2>
-                <WebhookConfigForm />
-                
-                <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Webhook className="w-5 h-5 text-blue-600" />
-                    <h3 className="text-sm font-medium text-blue-800">About Webhooks</h3>
+              <div className="space-y-6">
+                <div className="bg-white rounded-xl shadow-sm p-6">
+                  <h2 className="text-xl font-semibold text-gray-900 mb-6">Webhook Configuration</h2>
+                  <WebhookConfigForm />
+
+                  <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Webhook className="w-5 h-5 text-blue-600" />
+                      <h3 className="text-sm font-medium text-blue-800">About Webhooks</h3>
+                    </div>
+                    <p className="text-sm text-blue-600 mb-2">
+                      A webhook is a bridge between WhatsApp and your application. It receives messages and status updates from WhatsApp and forwards them to your application for processing.
+                    </p>
+                    <p className="text-sm text-blue-600">
+                      For proper functionality, ensure your webhook server is deployed and accessible from the internet. Configure the same URL in your Meta Developer Dashboard.
+                    </p>
                   </div>
-                  <p className="text-sm text-blue-600 mb-2">
-                    A webhook is a bridge between WhatsApp and your application. It receives messages and status updates from WhatsApp and forwards them to your application for processing.
-                  </p>
-                  <p className="text-sm text-blue-600">
-                    For proper functionality, ensure your webhook server is deployed and accessible from the internet. Configure the same URL in your Meta Developer Dashboard.
-                  </p>
                 </div>
+
+                <WebhookApiLinksManager />
               </div>
             )}
 

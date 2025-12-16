@@ -82,32 +82,55 @@ const CustomerService = () => {
   const [showTemplateManager, setShowTemplateManager] = useState(false);
 
   useEffect(() => {
-    loadData();
-    
+    let mounted = true;
+    const subscriptions: any[] = [];
+
+    // Load data only if mounted
+    const loadDataIfMounted = async () => {
+      if (mounted) {
+        await loadData();
+      }
+    };
+
+    loadDataIfMounted();
+
     // Set up real-time subscriptions
     const conversationsSubscription = supabase
       .channel('customer_conversations_changes')
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'customer_conversations' 
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'customer_conversations'
       }, () => {
-        loadConversations();
-        loadStats();
+        if (mounted) {
+          loadConversations();
+          loadStats();
+        }
       })
       .subscribe();
 
+    subscriptions.push(conversationsSubscription);
+
     // Subscribe to chatbot communication updates
     const unsubscribeChatbotUpdates = subscribeToModuleUpdates('customer_service', (payload) => {
-      console.log('Customer service update received:', payload);
-      if (payload.action === 'response_generated') {
-        loadConversations();
-        loadStats();
+      if (mounted) {
+        console.log('Customer service update received:', payload);
+        if (payload.action === 'response_generated') {
+          loadConversations();
+          loadStats();
+        }
       }
     });
 
     return () => {
-      conversationsSubscription.unsubscribe();
+      mounted = false;
+      subscriptions.forEach(sub => {
+        try {
+          sub.unsubscribe();
+        } catch (error) {
+          console.warn('Error unsubscribing from channel:', error);
+        }
+      });
       unsubscribeChatbotUpdates();
     };
   }, []);
@@ -276,23 +299,31 @@ const CustomerService = () => {
 
       console.log('🗑️ [CUSTOMER-SERVICE-UI] Starting deletion of selected conversations:', selectedConversations);
 
+      // Optimistic update - remove from UI immediately
+      const previousConversations = [...conversations];
+      setConversations(prev => prev.filter(conv => !selectedConversations.includes(conv.id)));
+      setSelectedConversations([]);
+
       const result = await deleteCustomerServiceConversations(selectedConversations);
       if (result.success) {
         setSuccess(`${result.deletedCount} conversation(s) supprimée(s) avec succès`);
-        setSelectedConversations([]);
-        
-        console.log('✅ [CUSTOMER-SERVICE-UI] Deletion successful, refreshing conversation list');
-        
-        // Force immediate refresh of conversations list
+        console.log('✅ [CUSTOMER-SERVICE-UI] Deletion successful');
+
+        // Reload to ensure consistency
         await loadConversations();
-        
+        await loadStats();
+
         setTimeout(() => setSuccess(null), 3000);
       } else {
         console.error('❌ [CUSTOMER-SERVICE-UI] Deletion failed:', result.error);
+        // Rollback optimistic update
+        setConversations(previousConversations);
         setError(result.error || 'Erreur lors de la suppression');
       }
     } catch (error) {
       console.error('Error deleting selected conversations:', error);
+      // Rollback optimistic update
+      await loadConversations();
       setError('Erreur lors de la suppression des conversations');
     }
   };
@@ -310,32 +341,39 @@ const CustomerService = () => {
       }[deleteTimeframe];
 
       if (!confirm(`Êtes-vous sûr de vouloir supprimer toutes les conversations de la ${timeframeLabel} ? Cette action est irréversible.`)) {
+        setDeletingConversations(false);
         return;
       }
 
       console.log('🗑️ [CUSTOMER-SERVICE-UI] Starting timeframe deletion:', deleteTimeframe);
 
+      // Optimistic update - clear conversations from UI immediately
+      const previousConversations = [...conversations];
+      if (deleteTimeframe === 'all') {
+        setConversations([]);
+      }
+
       // Use the dedicated deletion function
       const result = await deleteCustomerServiceConversationsByTimeframe(deleteTimeframe);
-      
+
       if (!result.success) {
+        // Rollback optimistic update
+        setConversations(previousConversations);
         throw new Error(result.error || 'Deletion failed');
       }
-      
+
       console.log('✅ [CUSTOMER-SERVICE-UI] Timeframe deletion successful, refreshing conversation list');
-      
+
       // Always reload conversations to get the updated list
-      await loadConversations();
-      
+      await Promise.all([loadConversations(), loadStats()]);
+
       setSuccess(`${result.deletedCount} conversation(s) supprimée(s) avec succès`);
       setShowDeleteOptions(false);
-      
-      // Reload stats to reflect the changes
-      await loadStats();
-      
+
       setTimeout(() => setSuccess(null), 3000);
     } catch (error) {
       console.error('Error deleting recent conversations:', error);
+      await loadConversations(); // Ensure UI is in sync
       setError(`Erreur lors de la suppression des conversations récentes: ${error.message}`);
     } finally {
       setDeletingConversations(false);
@@ -727,23 +765,30 @@ const CustomerService = () => {
               onDeleteConversations={async (conversationIds) => {
                 try {
                   console.log('🗑️ [CUSTOMER-SERVICE-UI] ConversationList deletion request:', conversationIds);
-                  
+
+                  // Optimistic update - remove from UI immediately
+                  const previousConversations = [...conversations];
+                  setConversations(prev => prev.filter(conv => !conversationIds.includes(conv.id)));
+
                   const result = await deleteCustomerServiceConversations(conversationIds);
                   if (result.success) {
                     setSuccess(`${result.deletedCount} conversation(s) supprimée(s) avec succès`);
-                    
-                    console.log('✅ [CUSTOMER-SERVICE-UI] ConversationList deletion successful, refreshing');
-                    
-                    // Force immediate refresh of conversations list
-                    await loadConversations();
-                    
+                    console.log('✅ [CUSTOMER-SERVICE-UI] ConversationList deletion successful');
+
+                    // Reload to ensure consistency
+                    await Promise.all([loadConversations(), loadStats()]);
+
                     setTimeout(() => setSuccess(null), 3000);
                   } else {
                     console.error('❌ [CUSTOMER-SERVICE-UI] ConversationList deletion failed:', result.error);
+                    // Rollback optimistic update
+                    setConversations(previousConversations);
                     setError(result.error || 'Erreur lors de la suppression');
                   }
                 } catch (error) {
                   console.error('Error deleting conversations:', error);
+                  // Rollback optimistic update
+                  await loadConversations();
                   setError('Erreur lors de la suppression des conversations');
                 }
               }}

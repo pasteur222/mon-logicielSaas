@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Users, MessageSquare, Trophy, Clock, BarChart2, Calendar, CheckCircle, XCircle, Gauge, CreditCard, BookOpen } from 'lucide-react';
+import { Activity, Users, MessageSquare, Trophy, Clock, BarChart2, Calendar, CheckCircle, XCircle, Gauge, CreditCard } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -7,8 +7,6 @@ import DashboardCharts from '../components/DashboardCharts';
 import ChatbotHealthMonitor from '../components/ChatbotHealthMonitor';
 import RealTimeSync from '../components/RealTimeSync';
 import { subscribeToModuleUpdates } from '../lib/chatbot-communication';
-import { getEnhancedQuizStatistics } from '../lib/quiz-enhanced';
-import { getConversationAnalytics } from '../lib/conversation-utils';
 
 interface DashboardStats {
   whatsapp: {
@@ -102,15 +100,12 @@ const Dashboard = () => {
 
   const fetchDashboardStats = async () => {
     try {
-      setIsLoading(true);
-      
       // WhatsApp Stats
       const { data: whatsappMessages } = await supabase
         .from('customer_conversations')
-        .select('*')
-        .eq('source', 'whatsapp');
+        .select('*');
 
-      // WhatsApp Config Status
+      // Fix: Use the correct table name 'user_whatsapp_config' instead of 'whatsapp_config'
       const { data: whatsappConfig } = await supabase
         .from('user_whatsapp_config')
         .select('*')
@@ -118,41 +113,22 @@ const Dashboard = () => {
         .limit(1)
         .maybeSingle();
 
+      // Quiz Stats
+      const { data: quizGames } = await supabase
+        .from('quiz_games')
+        .select('*');
+
+      const { data: quizParticipants } = await supabase
+        .from('quiz_participants')
+        .select('*');
+
       // Customer Service Stats
       const { data: customerMessages } = await supabase
         .from('customer_conversations')
         .select('*')
-        .eq('intent', 'client');
+        .eq('sender', 'user');
 
-      // Get enhanced customer service analytics
-      let customerServiceAnalytics;
-      try {
-        customerServiceAnalytics = await getConversationAnalytics('client');
-      } catch (analyticsError) {
-        console.warn('Failed to load customer service analytics:', analyticsError);
-        customerServiceAnalytics = {
-          totalMessages: customerMessages?.length || 0,
-          averageResponseTime: 0,
-          resolutionRate: 85,
-          active: 0
-        };
-      }
-
-      // Get enhanced quiz statistics
-      let quizAnalytics;
-      try {
-        quizAnalytics = await getEnhancedQuizStatistics();
-      } catch (quizError) {
-        console.warn('Failed to load quiz analytics:', quizError);
-        quizAnalytics = {
-          totalParticipants: 0,
-          averageScore: 0,
-          completionRate: 0,
-          profileBreakdown: { discovery: 0, active: 0, vip: 0 }
-        };
-      }
-
-      // Calculate WhatsApp statistics
+      // Calculer les statistiques
       setStats({
         whatsapp: {
           totalMessages: whatsappMessages?.length || 0,
@@ -160,28 +136,45 @@ const Dashboard = () => {
           activeChats: calculateActiveChats(whatsappMessages || [])
         },
         customerService: {
-          totalTickets: customerServiceAnalytics.totalMessages || 0,
-          responseTime: customerServiceAnalytics.averageResponseTime || 0,
-          satisfactionRate: customerServiceAnalytics.resolutionRate || 85,
+          totalTickets: customerMessages?.length || 0,
+          responseTime: calculateAverageResponseTime(customerMessages || []),
+          satisfactionRate: 85, // À implémenter: calcul réel
           commonTopics: calculateCommonTopics(customerMessages || [])
         },
         quiz: {
-          activeGames: 0, // Will be calculated from quiz_sessions if needed
-          totalParticipants: quizAnalytics.totalParticipants || 0,
-          averageScore: quizAnalytics.averageScore || 0,
-          completionRate: quizAnalytics.completionRate || 0,
-          profileBreakdown: quizAnalytics.profileBreakdown || { discovery: 0, active: 0, vip: 0 }
+          activeGames: quizGames?.filter(g => g.status === 'active').length || 0,
+          totalParticipants: quizParticipants?.length || 0,
+          averageScore: calculateQuizAverageScore(quizParticipants || []),
+          completionRate: calculateQuizCompletionRate(quizParticipants || []),
+          profileBreakdown: { discovery: 0, active: 0, vip: 0 }
         }
       });
+
+      // Load marketing quiz stats
+      const { data: quizUsers } = await supabase
+        .from('quiz_users')
+        .select('*');
+
+      if (quizUsers) {
+        const profileBreakdown = {
+          discovery: quizUsers.filter(u => u.profile === 'discovery').length,
+          active: quizUsers.filter(u => u.profile === 'active').length,
+          vip: quizUsers.filter(u => u.profile === 'vip').length
+        };
+
+        setStats(prev => ({
+          ...prev,
+          quiz: {
+            ...prev.quiz,
+            totalParticipants: quizUsers.length,
+            profileBreakdown
+          }
+        }));
+      }
+
+      setIsLoading(false);
     } catch (error) {
       console.error('Error fetching dashboard stats:', error);
-      // Set default stats on error to prevent UI crashes
-      setStats({
-        whatsapp: { totalMessages: 0, deliveryRate: 0, activeChats: 0 },
-        customerService: { totalTickets: 0, responseTime: 0, satisfactionRate: 0, commonTopics: [] },
-        quiz: { activeGames: 0, totalParticipants: 0, averageScore: 0, completionRate: 0, profileBreakdown: { discovery: 0, active: 0, vip: 0 } }
-      });
-    } finally {
       setIsLoading(false);
     }
   };
@@ -238,7 +231,7 @@ const Dashboard = () => {
 
   const calculateQuizCompletionRate = (participants: any[]) => {
     if (participants.length === 0) return 0;
-    const completed = participants.filter(p => p.status === 'completed').length;
+    const completed = participants.filter(p => p.total_answers > 0).length;
     return (completed / participants.length) * 100;
   };
 
@@ -457,11 +450,6 @@ const Dashboard = () => {
                 <div className="text-2xl font-bold text-green-600 mb-1">{stats.quiz.profileBreakdown?.active || 0}</div>
                 <div className="text-sm font-medium text-green-800">ACTIVE</div>
                 <div className="text-xs text-green-600">Clients engagés</div>
-              </div>
-              <div className="text-center p-4 bg-purple-50 rounded-lg">
-                <div className="text-2xl font-bold text-purple-600 mb-1">{stats.quiz.profileBreakdown?.vip || 0}</div>
-                <div className="text-sm font-medium text-purple-800">VIP</div>
-                <div className="text-xs text-purple-600">Clients premium</div>
               </div>
             </div>
           </div>

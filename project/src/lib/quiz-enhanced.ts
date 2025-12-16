@@ -38,6 +38,26 @@ interface EnhancedQuizMessage {
   timestamp?: string;
 }
 
+// Quiz start trigger keywords
+const QUIZ_START_TRIGGERS = [
+  'quiz', 'test', 'game', 'jeu', 'start', 'commencer', 'démarrer', 'begin',
+  'play', 'jouer', 'restart', 'recommencer', 'nouveau', 'new'
+];
+
+/**
+ * Check if a message is a quiz start trigger
+ */
+function isQuizStartTrigger(message: string): boolean {
+  if (!message || typeof message !== 'string') {
+    return false;
+  }
+
+  const lowerMessage = message.toLowerCase().trim();
+  return QUIZ_START_TRIGGERS.some(trigger =>
+    lowerMessage === trigger || lowerMessage.includes(trigger)
+  );
+}
+
 interface QuizQuestionWithLogic {
   id: string;
   text: string;
@@ -84,15 +104,28 @@ export async function processEnhancedQuizMessage(message: EnhancedQuizMessage): 
       throw new Error(`Invalid user data: ${userValidation.errors.join(', ')}`);
     }
 
+    // Check if this is a quiz start trigger
+    const isStartTrigger = isQuizStartTrigger(message.content);
+
+    console.log('🎯 [QUIZ-ENHANCED] Message analysis:', {
+      isStartTrigger,
+      messageContent: message.content.substring(0, 50)
+    });
+
     // Get or create quiz user with enhanced validation
     const userIdentifier = message.phoneNumber || message.webUserId || 'unknown';
-    const quizUser = await getOrCreateEnhancedQuizUser(userIdentifier, userValidation.sanitizedData);
-    
+    const quizUser = await getOrCreateEnhancedQuizUser(
+      userIdentifier,
+      userValidation.sanitizedData,
+      isStartTrigger
+    );
+
     console.log('👤 [QUIZ-ENHANCED] Quiz user:', {
       id: quizUser.id,
       score: quizUser.score,
       profile: quizUser.profile,
-      currentStep: quizUser.current_step
+      currentStep: quizUser.current_step,
+      status: quizUser.status
     });
 
     // Try to recover interrupted session or start new one
@@ -130,10 +163,10 @@ export async function processEnhancedQuizMessage(message: EnhancedQuizMessage): 
 
     // Get questions with conditional logic support
     const questions = await getQuestionsWithConditionalLogic(quizUser);
-    
+
     if (!questions || questions.length === 0) {
       const noQuestionsResponse = "Désolé, aucune question n'est disponible pour le moment. Veuillez contacter l'administrateur.";
-      
+
       await saveConversationMessage({
         phone_number: message.phoneNumber,
         web_user_id: message.webUserId,
@@ -151,11 +184,51 @@ export async function processEnhancedQuizMessage(message: EnhancedQuizMessage): 
       };
     }
 
+    // If this is a quiz start trigger and user is at step 0, send welcome + first question
+    if (isStartTrigger && quizUser.current_step === 0 && message.sender === 'user') {
+      console.log('🎬 [QUIZ-ENHANCED] Quiz start triggered, sending first question');
+
+      const welcomeMessage = `🎮 **Bienvenue au Quiz Interactif !**\n\nPréparez-vous à répondre à ${questions.length} questions.\n\nC'est parti ! 🚀\n\n`;
+      const firstQuestion = formatEnhancedQuizQuestion(questions[0], 1, questions.length);
+      const response = welcomeMessage + firstQuestion;
+
+      // Calculate response time
+      const responseTime = (Date.now() - startTime) / 1000;
+
+      // Save bot response
+      const botMessage: EnhancedQuizMessage = {
+        phoneNumber: message.phoneNumber,
+        webUserId: message.webUserId,
+        sessionId: message.sessionId,
+        source: message.source,
+        content: response,
+        sender: 'bot',
+        country: message.country
+      };
+
+      await saveConversationMessage({
+        phone_number: botMessage.phoneNumber,
+        web_user_id: botMessage.webUserId,
+        session_id: botMessage.sessionId,
+        source: botMessage.source,
+        content: botMessage.content,
+        sender: botMessage.sender,
+        intent: 'quiz',
+        response_time: responseTime
+      });
+
+      console.log('✅ [QUIZ-ENHANCED] First question sent successfully');
+      return botMessage;
+    }
+
     // Get user profile for Groq configuration
     let userId = await getUserIdForGroq(message.phoneNumber);
 
-    // Create Groq client
-    const groq = await createGroqClient(userId);
+    // Create Groq client and get configured model
+    const groqConfig = await createGroqClient(userId);
+    const groq = groqConfig.client;
+    const model = groqConfig.model;
+    console.log('🎯 [QUIZ] Using configured model:', model);
 
     // Process user answer if they're answering a question
     let response = '';
@@ -252,26 +325,36 @@ export async function processEnhancedQuizMessage(message: EnhancedQuizMessage): 
     }
 
     // If no specific response generated, use AI for general interaction
+    // This should only happen for non-answer messages outside the quiz flow
     if (!response) {
-      const completion = await groq.chat.completions.create({
-        messages: [
-          {
-            role: "system",
-            content: `Vous êtes un maître de quiz qui crée des quiz éducatifs et marketing engageants.
-            Votre objectif est de rendre l'expérience amusante et informative.
-            Soyez enthousiaste, encourageant et fournissez des commentaires constructifs.
-            Adaptez vos réponses selon le contexte: éducatif ou marketing.
-            ${message.source === 'web' ? 'L\'utilisateur participe via votre site web.' : 'L\'utilisateur participe via WhatsApp.'}`
-          },
-          { role: "user", content: message.content }
-        ],
-        model: 'llama3-70b-8192',
-        temperature: 0.7,
-        max_tokens: 1500,
-      });
+      console.log('⚠️ [QUIZ-ENHANCED] No response generated, using AI fallback');
 
-      response = completion.choices[0]?.message?.content || 
-        "Bienvenue au quiz ! Êtes-vous prêt à commencer ?";
+      // Check if user is in active quiz
+      if (quizUser.status === 'active' && quizUser.current_step >= 0 && quizUser.current_step < questions.length) {
+        // User is in active quiz but sent something other than an answer
+        const currentQuestion = questions[quizUser.current_step];
+        response = `Je n'ai pas compris votre réponse. Voici à nouveau la question actuelle:\n\n${formatEnhancedQuizQuestion(currentQuestion, quizUser.current_step + 1, questions.length)}`;
+      } else {
+        // User is not in quiz, provide helpful AI response
+        const completion = await groq.chat.completions.create({
+          messages: [
+            {
+              role: "system",
+              content: `Vous êtes un assistant de quiz amical et encourageant.
+              Si l'utilisateur veut commencer ou recommencer le quiz, invitez-le à taper "Game".
+              Soyez bref, enthousiaste et guidez l'utilisateur vers l'action.
+              ${message.source === 'web' ? 'L\'utilisateur participe via votre site web.' : 'L\'utilisateur participe via WhatsApp.'}`
+            },
+            { role: "user", content: message.content }
+          ],
+          model: model, // ✅ Use user's configured model
+          temperature: 0.7,
+          max_tokens: 500,
+        });
+
+        response = completion.choices[0]?.message?.content ||
+          "Bienvenue ! Pour commencer le quiz, tapez simplement 'Game' 🎮";
+      }
     }
 
     // Calculate response time
@@ -348,11 +431,15 @@ export async function processEnhancedQuizMessage(message: EnhancedQuizMessage): 
 /**
  * Get or create enhanced quiz user with validation
  */
-async function getOrCreateEnhancedQuizUser(identifier: string, validatedData: any): Promise<any> {
+async function getOrCreateEnhancedQuizUser(
+  identifier: string,
+  validatedData: any,
+  isStartTrigger: boolean = false
+): Promise<any> {
   try {
     // Check if user exists
     let query = supabase.from('quiz_users').select('*');
-    
+
     if (validatedData.phone_number) {
       query = query.eq('phone_number', validatedData.phone_number);
     } else if (validatedData.web_user_id) {
@@ -366,11 +453,50 @@ async function getOrCreateEnhancedQuizUser(identifier: string, validatedData: an
     }
 
     if (existingUser) {
-      // Update last activity and any new data
+      console.log('👤 [QUIZ-ENHANCED] Existing user found:', {
+        userId: existingUser.id,
+        status: existingUser.status,
+        currentStep: existingUser.current_step,
+        isStartTrigger
+      });
+
+      // Check if user wants to restart the quiz
+      const shouldReset = isStartTrigger && (
+        existingUser.status === 'completed' ||
+        existingUser.status === 'ended' ||
+        existingUser.current_step >= 0 // Allow restart even if quiz is in progress
+      );
+
       const updates: any = { updated_at: new Date().toISOString() };
-      
+
       if (validatedData.country && !existingUser.country) {
         updates.country = validatedData.country;
+      }
+
+      // Reset quiz state if user is starting a new quiz
+      if (shouldReset) {
+        console.log('🔄 [QUIZ-ENHANCED] Resetting quiz state for user:', existingUser.id);
+        updates.status = 'active';
+        updates.current_step = 0;
+        updates.score = 0;
+        updates.profile = 'discovery';
+
+        // Also end any active sessions
+        try {
+          const { data: activeSessions } = await supabase
+            .from('quiz_sessions')
+            .select('id')
+            .eq('user_id', existingUser.id)
+            .eq('completion_status', 'active');
+
+          if (activeSessions && activeSessions.length > 0) {
+            await Promise.all(activeSessions.map(session =>
+              endQuizSession(session.id, 'restarted')
+            ));
+          }
+        } catch (sessionError) {
+          console.warn('⚠️ [QUIZ-ENHANCED] Failed to end active sessions:', sessionError);
+        }
       }
 
       await supabase

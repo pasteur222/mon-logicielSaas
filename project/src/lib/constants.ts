@@ -1,10 +1,13 @@
-// Groq AI Models
+// Groq AI Models - Updated with currently supported models
+// See: https://console.groq.com/docs/models
 export const GROQ_MODELS = [
-  { id: 'llama3-70b-8192', name: 'Llama 3 70B (8K context)' },
-  { id: 'llama3-8b-8192', name: 'Llama 3 8B (8K context)' },
+  { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile (Recommended)' },
+  { id: 'llama-3.1-70b-versatile', name: 'Llama 3.1 70B Versatile' },
+  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant (Fast)' },
   { id: 'gemma2-9b-it', name: 'Gemma 2 9B Instruct' },
-  { id: 'gemma-7b-it', name: 'Gemma 7B Instruct' }
+  { id: 'mixtral-8x7b-32768', name: 'Mixtral 8x7B (32K context)' }
 ];
 
 // Default Groq model to use if none is specified
-export const DEFAULT_GROQ_MODEL = 'llama3-70b-8192';
+// Using Gemma 2 9B as it's fast, reliable, and cost-effective
+export const DEFAULT_GROQ_MODEL = 'gemma2-9b-it';

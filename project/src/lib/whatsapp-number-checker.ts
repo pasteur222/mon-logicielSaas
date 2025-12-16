@@ -185,11 +185,6 @@ export async function batchValidateWhatsAppNumbers(
     apiCallsMade: number;
     cacheHits: number;
     errors: number;
-    whatsAppValidation: {
-      validRate: number;
-      invalidRate: number;
-      unknownRate: number;
-    };
   };
 }> {
   const opts = { ...DEFAULT_BATCH_OPTIONS, ...options };
@@ -330,32 +325,15 @@ export async function batchValidateWhatsAppNumbers(
   }
 
   // Calculate summary statistics
-  const preValidationPassed = results.filter(r => r.validationDetails.isValid).length;
-  const preValidationFailed = results.length - preValidationPassed;
-  const whatsAppValid = results.filter(r => r.hasWhatsApp === true).length;
-  const whatsAppInvalid = results.filter(r => r.hasWhatsApp === false).length;
-  const whatsAppUnknown = results.filter(r => r.hasWhatsApp === null).length;
-  const apiCallsMade = results.filter(r => r.apiCalled).length;
-  const cacheHits = results.filter(r => r.source === 'cache').length;
-  const errors = results.filter(r => r.error).length;
-
-  const whatsAppTotal = whatsAppValid + whatsAppInvalid;
-  const whatsAppValidation = {
-    validRate: whatsAppTotal > 0 ? (whatsAppValid / whatsAppTotal) * 100 : 0,
-    invalidRate: whatsAppTotal > 0 ? (whatsAppInvalid / whatsAppTotal) * 100 : 0,
-    unknownRate: results.length > 0 ? (whatsAppUnknown / results.length) * 100 : 0
-  };
-
   const summary = {
     total: results.length,
-    preValidationPassed,
-    preValidationFailed,
-    whatsAppValid,
-    whatsAppInvalid,
-    apiCallsMade,
-    cacheHits,
-    errors,
-    whatsAppValidation
+    preValidationPassed: results.filter(r => r.validationDetails.isValid).length,
+    preValidationFailed: results.filter(r => !r.validationDetails.isValid).length,
+    whatsAppValid: results.filter(r => r.hasWhatsApp === true).length,
+    whatsAppInvalid: results.filter(r => r.hasWhatsApp === false).length,
+    apiCallsMade: results.filter(r => r.apiCalled).length,
+    cacheHits: results.filter(r => r.source === 'cache').length,
+    errors: results.filter(r => r.error).length
   };
 
   console.log('📊 [WHATSAPP-CHECKER] Batch validation completed:', summary);

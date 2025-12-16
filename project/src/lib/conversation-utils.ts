@@ -392,7 +392,6 @@ export async function getConversationAnalytics(intent: string = 'client') {
     // Additional analytics
     const analytics = {
       ...stats,
-      totalMessages: conversations?.length || 0,
       conversationsByDay: getConversationsByDay(conversations || []),
       responseTimeDistribution: getResponseTimeDistribution(conversations || []),
       popularTopics: getPopularTopics(conversations || []),
@@ -404,24 +403,7 @@ export async function getConversationAnalytics(intent: string = 'client') {
     return analytics;
   } catch (error) {
     console.error('Error getting conversation analytics:', error);
-    // Return default analytics instead of throwing to prevent dashboard crashes
-    return {
-      totalMessages: 0,
-      total: 0,
-      whatsapp: 0,
-      web: 0,
-      active: 0,
-      recent: 0,
-      inactive: 0,
-      averageResponseTime: 0,
-      averageMessagesPerConversation: 0,
-      conversationsByDay: {},
-      responseTimeDistribution: { fast: 0, medium: 0, slow: 0 },
-      popularTopics: [],
-      peakHours: {},
-      averageConversationDuration: 0,
-      resolutionRate: 0
-    };
+    throw error;
   }
 }
 

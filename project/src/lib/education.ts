@@ -58,7 +58,10 @@ export async function analyzeStudentMessage(message: string, studentId: string):
     }
 
     // Create Groq client with user's API key
-    const groq = await createGroqClient(student.user_id);
+    const groqConfig = await createGroqClient(student.user_id);
+    const groq = groqConfig.client;
+    const model = groqConfig.model;
+    console.log('🎯 [EDUCATION] Using configured model:', model);
 
     const completion = await groq.chat.completions.create({
       messages: [
@@ -74,7 +77,7 @@ export async function analyzeStudentMessage(message: string, studentId: string):
         },
         { role: 'user', content: message }
       ],
-      model: 'mixtral-8x7b-32768',
+      model: model, // ✅ Use user's configured model
       temperature: 0.3,
       max_tokens: 500,
     });
@@ -115,7 +118,10 @@ export async function analyzeStudentImage(imageUrl: string, studentId: string): 
     }
 
     // Create Groq client with user's API key
-    const groq = await createGroqClient(student.user_id);
+    const groqConfig = await createGroqClient(student.user_id);
+    const groq = groqConfig.client;
+    const model = groqConfig.model;
+    console.log('🎯 [EDUCATION-IMAGE] Using configured model:', model);
 
     // Step 1: Analyze user context if available
     const userContext = await analyzeUserContextFromProfile(student);
@@ -168,28 +174,28 @@ RESPOND IN JSON FORMAT:
   "reasoning": "detailed explanation of your analysis and classification"
 }`
         },
-        { 
-          role: 'user', 
+        {
+          role: 'user',
           content: [
-            { 
-              type: "text", 
-              text: `Analyze this educational image sent by a ${student.level} student. 
-              
+            {
+              type: "text",
+              text: `Analyze this educational image sent by a ${student.level} student.
+
 CRITICAL: Be extremely careful to distinguish between:
 - Pure text content (letters, essays, stories) → classify as "text"
 - Mathematical content (equations, calculations) → classify as "math"
 - Scientific content (diagrams, experiments) → classify as "science"
 
-Look at what is ACTUALLY visible in the image, not what you might expect.` 
+Look at what is ACTUALLY visible in the image, not what you might expect.`
             },
-            { 
-              type: "image_url", 
-              image_url: { url: imageUrl } 
+            {
+              type: "image_url",
+              image_url: { url: imageUrl }
             }
           ]
         }
       ],
-      model: 'llama3-70b-8192',
+      model: model, // ✅ Use user's configured model
       temperature: 0.05, // Extremely low for consistent analysis
       max_tokens: 500,
     });
@@ -494,20 +500,23 @@ export async function processCustomerMessage(message: Message): Promise<Message>
     }
 
     // Create Groq client with user's API key
-    groq = await createGroqClient(userId);
+    const groqConfig = await createGroqClient(userId);
+    groq = groqConfig.client;
+    const model = groqConfig.model;
+    console.log('🎯 [EDUCATION] Using configured model:', model);
 
     // 2. Process based on message type
     if (message.imageUrl) {
       console.log('🖼️ [EDUCATION] Processing image message with enhanced analysis');
-      
+
       // Step 1: Analyze user context from text message
       const userContext = await analyzeUserContextFromMessage(message.content || '');
       console.log('👤 [EDUCATION] User context from message:', userContext);
-      
+
       // Step 2: Analyze image content
       const analysis = await analyzeStudentImage(message.imageUrl, student.id);
       console.log('📊 [EDUCATION] Image analysis result:', analysis);
-      
+
       // Step 3: Generate contextual system prompt
       const systemPrompt = generateContextualSystemPrompt(student, userContext, analysis);
       console.log('📝 [EDUCATION] Generated system prompt for:', analysis.contentType);
@@ -516,21 +525,21 @@ export async function processCustomerMessage(message: Message): Promise<Message>
       const completion = await groq.chat.completions.create({
         messages: [
           { role: 'system', content: systemPrompt },
-          { 
-            role: 'user', 
+          {
+            role: 'user',
             content: [
-              { 
-                type: "text", 
+              {
+                type: "text",
                 text: message.content || "Veuillez analyser et expliquer le contenu de cette image."
               },
-              { 
-                type: "image_url", 
-                image_url: { url: message.imageUrl } 
+              {
+                type: "image_url",
+                image_url: { url: message.imageUrl }
               }
             ]
           }
         ],
-        model: 'llama3-70b-8192',
+        model: model, // ✅ Use user's configured model
         temperature: 0.7,
         max_tokens: 1500,
       });

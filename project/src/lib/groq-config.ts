@@ -132,27 +132,29 @@ export async function saveGroqConfig(userId: string, config: GroqConfig): Promis
 /**
  * Create a Groq client instance for a user
  * @param userId User ID to create client for, or undefined to use any available configuration
- * @returns Groq client instance
+ * @returns Object with Groq client instance and model
  */
-export async function createGroqClient(userId: string): Promise<Groq> {
+export async function createGroqClient(userId: string): Promise<{ client: Groq; model: string }> {
   try {
     let config;
-    
+
     try {
       // First try with the provided user ID
       config = await getGroqConfig(userId);
     } catch (userError) {
       console.warn(`No Groq config found for user ${userId}, trying any available config`);
-      
+
       // If that fails, try to get any available configuration
       config = await getGroqConfig();
     }
-    
-    return new Groq({
-      apiKey: config.apiKey,
-      dangerouslyAllowBrowser: true,
-      // Note: The model is not set here because it's passed in the completion request
-    });
+
+    return {
+      client: new Groq({
+        apiKey: config.apiKey,
+        dangerouslyAllowBrowser: true,
+      }),
+      model: config.model
+    };
   } catch (error) {
     console.error('Error creating Groq client:', error);
     throw error;

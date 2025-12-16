@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { MessageSquare, GamepadIcon, CreditCard, LayoutDashboard, FilterIcon, Settings } from 'lucide-react';
+import { MessageSquare, GamepadIcon, CreditCard, LayoutDashboard, FilterIcon, Settings, FileText } from 'lucide-react';
 import { AuthProvider } from './contexts/AuthContext';
 import { AppSettingsProvider } from './components/AppSettingsContext';
 import { LanguageProvider } from './contexts/LanguageContext';
@@ -15,6 +15,7 @@ import CustomerService from './pages/CustomerService';
 import Quiz from './pages/Quiz';
 import SettingsPage from './pages/Settings';
 import Payments from './pages/Payments';
+import Invoices from './pages/Invoices';
 import Features from './pages/Features';
 import Help from './pages/Help';
 import Home from './pages/Home';
@@ -39,6 +40,7 @@ function App() {
     { icon: MessageSquare, label: 'Customer Service', path: '/customer-service', restricted: false },
     { icon: GamepadIcon, label: 'Quiz', path: '/quiz', restricted: false },
     { icon: CreditCard, label: 'Payments', path: '/payments', restricted: false },
+    { icon: FileText, label: 'Invoices', path: '/invoices', restricted: false },
     { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard', restricted: false },
     { icon: FilterIcon, label: 'Number Filtering', path: '/number-filtering', restricted: false },
     { icon: Settings, label: 'Settings', path: '/settings', restricted: false }
@@ -195,6 +197,16 @@ function App() {
                     <Sidebar menuItems={menuItems} />
                     <main className="flex-1 overflow-y-auto">
                       <SettingsPage />
+                    </main>
+                  </div>
+                </PrivateRoute>
+              } />
+              <Route path="/invoices" element={
+                <PrivateRoute>
+                  <div className="flex h-screen bg-gray-50">
+                    <Sidebar menuItems={menuItems} />
+                    <main className="flex-1 overflow-y-auto">
+                      <Invoices />
                     </main>
                   </div>
                 </PrivateRoute>

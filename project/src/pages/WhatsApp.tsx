@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { MessageSquare, Send, Upload, Download, RefreshCw, AlertCircle, CheckCircle, Users, BarChart2, Settings, Calendar, Target, Zap, Filter, Plus, Eye, Edit, Trash2, X } from 'lucide-react';
-import { sendWhatsAppMessages, checkWhatsAppConnection, getWhatsAppTemplates, MessageResult, MessageVariable, parseMessageVariables, replaceMessageVariables } from '../lib/whatsapp';
+import { MessageSquare, Send, Upload, Download, RefreshCw, AlertCircle, CheckCircle, Users, BarChart2, Settings, Calendar, Target, Zap, Filter, Plus, Eye, Edit, Trash2, X, Image as ImageIcon, FileText as FileIcon } from 'lucide-react';
+import { sendWhatsAppMessages, checkWhatsAppConnection, getWhatsAppTemplates, uploadWhatsAppMedia, MessageResult, MessageVariable, parseMessageVariables, replaceMessageVariables } from '../lib/whatsapp';
 import { useAuth } from '../contexts/AuthContext';
 import BackButton from '../components/BackButton';
 import BulkUpload from '../components/BulkUpload';
@@ -49,6 +49,9 @@ const WhatsApp = () => {
   const [templates, setTemplates] = useState<any[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [templateError, setTemplateError] = useState<string | null>(null);
+  const [mediaFile, setMediaFile] = useState<{type: 'image' | 'video' | 'document', url: string} | null>(null);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [mediaUploadError, setMediaUploadError] = useState<string | null>(null);
 
   useEffect(() => {
     checkConnection();
@@ -121,8 +124,14 @@ const WhatsApp = () => {
   };
 
   const handleSendMessages = async () => {
-    if (!message.trim() && !phoneNumbers.trim() && contacts.length === 0) {
+    if (!message.trim() && !mediaFile && !phoneNumbers.trim() && contacts.length === 0) {
       setError('Veuillez saisir un message et des numéros de téléphone');
+      return;
+    }
+
+    // Validate media if present
+    if (mediaFile && !mediaFile.url) {
+      setError('Média incomplet. Veuillez réessayer le téléchargement.');
       return;
     }
 
@@ -131,14 +140,29 @@ const WhatsApp = () => {
     setSuccess(null);
 
     try {
-      let messagesToSend: Array<{ phoneNumber: string; message: string; variables?: MessageVariable[] }> = [];
+      let messagesToSend: Array<{
+        phoneNumber: string;
+        message: string;
+        variables?: MessageVariable[];
+        media?: {
+          type: 'image' | 'video' | 'document';
+          url: string;
+        };
+      }> = [];
+
+      // Prepare media object if present
+      const mediaToSend = mediaFile ? {
+        type: mediaFile.type,
+        url: mediaFile.url
+      } : undefined;
 
       if (contacts.length > 0) {
         // Use contacts from bulk upload
         messagesToSend = contacts.map(contact => ({
           phoneNumber: contact.phoneNumber,
           message: contact.message || message,
-          variables: contact.variables
+          variables: contact.variables,
+          media: mediaToSend
         }));
       } else {
         // Use manually entered phone numbers
@@ -154,9 +178,16 @@ const WhatsApp = () => {
 
         messagesToSend = numbers.map(phoneNumber => ({
           phoneNumber,
-          message
+          message,
+          media: mediaToSend
         }));
       }
+
+      console.log('📤 [WHATSAPP-UI] Sending messages with media:', {
+        messageCount: messagesToSend.length,
+        hasMedia: !!mediaToSend,
+        mediaType: mediaToSend?.type
+      });
 
       const results = await sendWhatsAppMessages(messagesToSend, user?.id);
       setResults(results);
@@ -165,7 +196,8 @@ const WhatsApp = () => {
       const errorCount = results.filter(r => r.status === 'error').length;
 
       if (successCount > 0) {
-        setSuccess(`${successCount} message(s) envoyé(s) avec succès${errorCount > 0 ? `, ${errorCount} échec(s)` : ''}`);
+        const mediaInfo = mediaToSend ? ` avec ${mediaToSend.type}` : '';
+        setSuccess(`${successCount} message(s) envoyé(s) avec succès${mediaInfo}${errorCount > 0 ? `, ${errorCount} échec(s)` : ''}`);
       }
 
       if (errorCount === results.length) {
@@ -177,6 +209,8 @@ const WhatsApp = () => {
         setMessage('');
         setPhoneNumbers('');
         setContacts([]);
+        setMediaFile(null);
+        setMediaUploadError(null);
       }
 
     } catch (error) {
@@ -207,7 +241,7 @@ const WhatsApp = () => {
   const handleSelectWhatsAppTemplate = (template: any, parameters: Record<string, string>) => {
     // Process WhatsApp template with parameters
     let processedMessage = template.parameters?.components?.find((c: any) => c.type === 'body')?.text || '';
-    
+
     // Replace parameters in the message
     Object.entries(parameters).forEach(([key, value]) => {
       if (key.includes('body_')) {
@@ -220,6 +254,47 @@ const WhatsApp = () => {
     setShowTemplateSelector(false);
     setSuccess('Template WhatsApp sélectionné');
     setTimeout(() => setSuccess(null), 3000);
+  };
+
+  const handleMediaUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setUploadingMedia(true);
+      setMediaUploadError(null);
+      setError(null);
+
+      const mediaUrl = await uploadWhatsAppMedia(file, user?.id);
+
+      let mediaType: 'image' | 'video' | 'document' = 'document';
+      if (file.type.startsWith('image/')) {
+        mediaType = 'image';
+      } else if (file.type.startsWith('video/')) {
+        mediaType = 'video';
+      }
+
+      setMediaFile({
+        type: mediaType,
+        url: mediaUrl
+      });
+
+      setSuccess(`Média téléchargé avec succès: ${file.name}`);
+      setTimeout(() => setSuccess(null), 3000);
+
+    } catch (err) {
+      console.error('Media upload failed:', err);
+      setMediaUploadError(err instanceof Error ? err.message : 'Échec du téléchargement');
+      setError('Échec du téléchargement du média');
+    } finally {
+      setUploadingMedia(false);
+      event.target.value = '';
+    }
+  };
+
+  const handleRemoveMedia = () => {
+    setMediaFile(null);
+    setMediaUploadError(null);
   };
 
   const renderTabContent = () => {
@@ -263,6 +338,57 @@ const WhatsApp = () => {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Média (Image, Vidéo ou Document)
+                  </label>
+                  <div className="space-y-2">
+                    {!mediaFile ? (
+                      <div className="flex items-center gap-2">
+                        <label className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer transition-colors">
+                          <Upload className="w-4 h-4" />
+                          <span>{uploadingMedia ? 'Téléchargement...' : 'Télécharger un média'}</span>
+                          <input
+                            type="file"
+                            accept="image/*,video/*,.pdf,.doc,.docx"
+                            onChange={handleMediaUpload}
+                            disabled={uploadingMedia}
+                            className="hidden"
+                          />
+                        </label>
+                        {uploadingMedia && <RefreshCw className="w-5 h-5 animate-spin text-blue-600" />}
+                      </div>
+                    ) : (
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          {mediaFile.type === 'image' ? (
+                            <ImageIcon className="w-5 h-5 text-green-600" />
+                          ) : (
+                            <FileIcon className="w-5 h-5 text-green-600" />
+                          )}
+                          <span className="text-sm text-green-800">
+                            Média ajouté ({mediaFile.type})
+                          </span>
+                        </div>
+                        <button
+                          onClick={handleRemoveMedia}
+                          className="text-red-600 hover:text-red-800"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+                    )}
+                    {mediaUploadError && (
+                      <div className="text-sm text-red-600">
+                        {mediaUploadError}
+                      </div>
+                    )}
+                    <p className="text-xs text-gray-500">
+                      Formats acceptés: Images (JPG, PNG, GIF), Vidéos (MP4, AVI), Documents (PDF, DOC)
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
                     Numéros de téléphone (un par ligne)
                   </label>
                   <textarea
@@ -292,6 +418,26 @@ const WhatsApp = () => {
               <div className="space-y-4">
                 <div className="bg-gray-50 rounded-lg p-4">
                   <h3 className="text-sm font-medium text-gray-700 mb-3">Aperçu</h3>
+                  {mediaFile && (
+                    <div className="mb-3">
+                      <div className="text-sm text-gray-600 mb-2">Média:</div>
+                      <div className="bg-white rounded-lg p-3 border border-gray-200">
+                        {mediaFile.type === 'image' ? (
+                          <img
+                            src={mediaFile.url}
+                            alt="Aperçu"
+                            className="max-w-full h-auto rounded"
+                            style={{ maxHeight: '200px' }}
+                          />
+                        ) : (
+                          <div className="flex items-center gap-2 text-gray-700">
+                            <FileIcon className="w-5 h-5" />
+                            <span className="text-sm">Fichier {mediaFile.type}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                   <div className="bg-white rounded-lg p-3 border border-gray-200">
                     <div className="text-sm text-gray-600 mb-2">Message:</div>
                     <div className="text-sm text-gray-900 whitespace-pre-wrap">

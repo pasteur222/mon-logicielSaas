@@ -44,20 +44,20 @@ const PROVIDER_FIELDS: Record<string, { name: string; fields: Array<{ key: strin
     fields: [
       { key: 'client_id', label: 'Client ID', type: 'text', placeholder: 'AeA1QIZXXXXXXXXXXXXXXXXXXXXXXXXbdYn' },
       { key: 'client_secret', label: 'Client Secret', type: 'password', placeholder: '••••••••••••••••' },
-      { key: 'mode', label: 'Mode', type: 'select', placeholder: 'sandbox' }
+      { key: 'mode', label: 'Mode (live for production)', type: 'select', placeholder: 'live' }
     ]
   }
 };
 
 const PaymentApiConfig: React.FC<PaymentApiConfigProps> = ({ onClose }) => {
-  const [selectedProvider, setSelectedProvider] = useState<string>('airtel');
+  const [selectedProvider, setSelectedProvider] = useState<string>('paypal');
   const [configs, setConfigs] = useState<PaymentConfig[]>([]);
   const [currentConfig, setCurrentConfig] = useState<PaymentConfig>({
-    provider: 'airtel',
+    provider: 'paypal',
     client_id: '',
     client_secret: '',
     is_active: true,
-    additional_config: {}
+    additional_config: { mode: 'live' }
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
