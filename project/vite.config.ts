@@ -6,4 +6,10 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['lucide-react'],
   },
+  server: {
+    allowedHosts: ['chabot-ia.onrender.com'],
+  },
+  preview: {
+    allowedHosts: ['chabot-ia.onrender.com'],
+  },
 });
