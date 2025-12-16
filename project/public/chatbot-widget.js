@@ -36,7 +36,7 @@
     apiUrl: scriptTag.getAttribute('data-api-url'),
     apiKey: scriptTag.getAttribute('data-api-key'),
     title: scriptTag.getAttribute('data-title') || 'Chat Support',
-    color: scriptTag.getAttribute('data-color') || '#3B82F6',
+    color: scriptTag.getAttribute('data-color') || '#ff0000',
     position: scriptTag.getAttribute('data-position') || 'bottom-right',
     greeting: scriptTag.getAttribute('data-greeting') || 'Bonjour! Comment puis-je vous aider?',
     placeholder: scriptTag.getAttribute('data-placeholder') || 'Tapez votre message...',
@@ -140,9 +140,22 @@
       justify-content: center;
       transition: transform 0.2s, box-shadow 0.2s;
       position: relative;
+      animation: chatbotPulse 2s infinite;
+    }
+
+    @keyframes chatbotPulse {
+      0%, 100% {
+        transform: scale(1);
+        box-shadow: 0 4px 12px rgba(255, 0, 0, 0.3);
+      }
+      50% {
+        transform: scale(1.1);
+        box-shadow: 0 6px 20px rgba(255, 0, 0, 0.5);
+      }
     }
 
     .chatbot-button:hover {
+      animation: none;
       transform: scale(1.05);
       box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
     }
@@ -754,12 +767,15 @@
       console.error('[CHATBOT-WIDGET] Failed to send message:', error);
 
       let errorMessage = 'Désolé, je rencontre des difficultés techniques.';
+      let botMessage = 'Merci pour votre message. Notre équipe vous contactera bientôt.';
+
       if (error.name === 'AbortError') {
         errorMessage = 'La requête a pris trop de temps. Veuillez réessayer.';
+        botMessage = 'Votre message a bien été reçu mais la réponse prend du temps. Notre équipe reviendra vers vous.';
       }
 
       showError(errorMessage, message);
-      addMessage('Désolé, je n\'ai pas pu traiter votre message. Veuillez réessayer ou contacter notre support.', 'bot');
+      addMessage(botMessage, 'bot');
     } finally {
       inputField.disabled = false;
       sendButton.disabled = false;

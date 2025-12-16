@@ -28,7 +28,8 @@ const PROVIDER_FIELDS: Record<string, { name: string; fields: Array<{ key: strin
       { key: 'client_id', label: 'Client ID', type: 'text', placeholder: '4e6cf8f4-5e0c-40b4-af8e-bb7c0742fd0e' },
       { key: 'client_secret', label: 'Client Secret', type: 'password', placeholder: '••••••••••••••••' },
       { key: 'api_endpoint', label: 'API Endpoint', type: 'text', placeholder: 'https://openapi.airtel.africa' },
-      { key: 'country_code', label: 'Country Code', type: 'text', placeholder: 'CG' }
+      { key: 'country_code', label: 'Country Code', type: 'text', placeholder: 'CG' },
+      { key: 'mode', label: 'Environment', type: 'select', placeholder: 'sandbox' }
     ]
   },
   stripe: {
@@ -36,7 +37,8 @@ const PROVIDER_FIELDS: Record<string, { name: string; fields: Array<{ key: strin
     fields: [
       { key: 'client_id', label: 'Publishable Key', type: 'text', placeholder: 'pk_test_123456789' },
       { key: 'client_secret', label: 'Secret Key', type: 'password', placeholder: 'sk_test_123456789' },
-      { key: 'webhook_secret', label: 'Webhook Secret', type: 'password', placeholder: 'whsec_123456789' }
+      { key: 'webhook_secret', label: 'Webhook Secret', type: 'password', placeholder: 'whsec_123456789' },
+      { key: 'mode', label: 'Environment', type: 'select', placeholder: 'sandbox' }
     ]
   },
   paypal: {
@@ -44,7 +46,7 @@ const PROVIDER_FIELDS: Record<string, { name: string; fields: Array<{ key: strin
     fields: [
       { key: 'client_id', label: 'Client ID', type: 'text', placeholder: 'AeA1QIZXXXXXXXXXXXXXXXXXXXXXXXXbdYn' },
       { key: 'client_secret', label: 'Client Secret', type: 'password', placeholder: '••••••••••••••••' },
-      { key: 'mode', label: 'Mode (live for production)', type: 'select', placeholder: 'live' }
+      { key: 'mode', label: 'Environment', type: 'select', placeholder: 'sandbox' }
     ]
   }
 };
@@ -57,7 +59,7 @@ const PaymentApiConfig: React.FC<PaymentApiConfigProps> = ({ onClose }) => {
     client_id: '',
     client_secret: '',
     is_active: true,
-    additional_config: { mode: 'live' }
+    additional_config: { mode: 'sandbox' }
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -74,13 +76,13 @@ const PaymentApiConfig: React.FC<PaymentApiConfigProps> = ({ onClose }) => {
     if (config) {
       setCurrentConfig(config);
     } else {
-      // Reset to default if no config exists
+      // Reset to default if no config exists with default mode as sandbox
       setCurrentConfig({
         provider: selectedProvider,
         client_id: '',
         client_secret: '',
         is_active: true,
-        additional_config: {}
+        additional_config: { mode: 'sandbox' }
       });
     }
   }, [selectedProvider, configs]);
@@ -218,15 +220,15 @@ const PaymentApiConfig: React.FC<PaymentApiConfigProps> = ({ onClose }) => {
               </label>
               {field.type === 'select' ? (
                 <select
-                  value={value}
-                  onChange={(e) => isStandardField 
+                  value={value || 'sandbox'}
+                  onChange={(e) => isStandardField
                     ? handleInputChange(field.key, e.target.value)
                     : handleAdditionalFieldChange(field.key, e.target.value)
                   }
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
                 >
                   <option value="sandbox">Sandbox (Test)</option>
-                  <option value="live">Live (Production)</option>
+                  <option value="live">Production (Live)</option>
                 </select>
               ) : (
                 <input
