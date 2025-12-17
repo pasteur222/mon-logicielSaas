@@ -684,6 +684,7 @@
         body: JSON.stringify({
           text: message,
           source: 'web',
+          chatbotType: 'client',
           webUserId: webUserId,
           sessionId: sessionId,
           userAgent: navigator.userAgent,

@@ -1,24 +1,25 @@
-// Follow this setup guide to integrate the Deno runtime and Supabase functions in your project:
-// https://deno.land/manual/getting_started/setup_your_environment
-
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import Groq from "npm:groq-sdk@0.26.0";
+import { Groq } from "npm:groq-sdk@0.26.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS"
+  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
+const DEFAULT_MODEL = "gemma2-9b-it";
+const DEPRECATED_MODELS = ["llama3-70b-8192", "llama3-8b-8192", "gemma-7b-it", "mixtral-8x7b-32768"];
+const REQUEST_TIMEOUT = 25000; // 25 seconds
+
 interface ChatbotRequest {
-  webUserId?: string;
-  phoneNumber?: string;
-  phoneNumberId?: string; // ✅ ADDED: WhatsApp Business Phone Number ID
-  sessionId?: string;
-  source: 'web' | 'whatsapp';
   text: string;
+  source: 'whatsapp' | 'web';
   chatbotType?: 'client' | 'quiz';
+  phoneNumber?: string;
+  phoneNumberId?: string;
+  webUserId?: string;
+  sessionId?: string;
   userAgent?: string;
   timestamp?: string;
 }
@@ -32,72 +33,82 @@ interface ChatbotResponse {
   source?: string;
 }
 
-// Request timeout configuration (must be less than client timeout)
-const REQUEST_TIMEOUT = 25000; // 25 seconds
-
 /**
- * Identify user from WhatsApp Business Phone Number ID or customer phone number
- * Returns user_id if found, null otherwise
+ * Identify the user from various identifiers
  */
 async function identifyUser(
   supabase: any,
   phoneNumberId?: string,
-  customerPhoneNumber?: string,
+  phoneNumber?: string,
   webUserId?: string
 ): Promise<string | null> {
   try {
-    // ✅ PRIMARY METHOD: For WhatsApp messages, find user by WhatsApp Business Phone Number ID
+    // Priority 1: Try to identify by WhatsApp Business Phone Number ID
     if (phoneNumberId) {
-      console.log('🔍 [API-CHATBOT] Looking up user by WhatsApp Business Phone Number ID:', phoneNumberId);
-
-      const { data: whatsappConfig, error } = await supabase
+      console.log('🔍 [API-CHATBOT] Identifying user by phone_number_id:', phoneNumberId);
+      const { data: whatsappConfig } = await supabase
         .from('user_whatsapp_config')
         .select('user_id')
-        .eq('phone_number_id', phoneNumberId) // ✅ FIXED: Match on business phone_number_id
+        .eq('phone_number_id', phoneNumberId)
         .eq('is_active', true)
         .maybeSingle();
 
-      if (!error && whatsappConfig?.user_id) {
-        console.log('✅ [API-CHATBOT] Found user from WhatsApp config:', whatsappConfig.user_id);
+      if (whatsappConfig?.user_id) {
+        console.log('✅ [API-CHATBOT] User identified by phone_number_id:', whatsappConfig.user_id);
         return whatsappConfig.user_id;
-      } else {
-        console.warn('⚠️ [API-CHATBOT] No user found for phone_number_id:', phoneNumberId);
-        if (error) {
-          console.error('❌ [API-CHATBOT] Database error:', error);
-        }
       }
     }
 
-    // ✅ FALLBACK METHOD: Try to find in existing conversations using customer phone
-    if (customerPhoneNumber) {
-      console.log('🔍 [API-CHATBOT] Fallback: Looking up user from conversation history for customer:', customerPhoneNumber);
-
-      const { data: conversation, error: convError } = await supabase
+    // Priority 2: Try to identify by customer phone number in WhatsApp config
+    if (phoneNumber) {
+      console.log('🔍 [API-CHATBOT] Identifying user by customer phone_number:', phoneNumber);
+      const { data: conversation } = await supabase
         .from('customer_conversations')
         .select('user_id')
-        .eq('phone_number', customerPhoneNumber)
+        .eq('phone_number', phoneNumber)
         .not('user_id', 'is', null)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      if (!convError && conversation?.user_id) {
-        console.log('✅ [API-CHATBOT] Found user from conversation history:', conversation.user_id);
+      if (conversation?.user_id) {
+        console.log('✅ [API-CHATBOT] User identified by phone_number:', conversation.user_id);
         return conversation.user_id;
       }
     }
 
-    // For web messages, could add web user lookup here if needed
+    // Priority 3: Try to identify by web user ID
     if (webUserId) {
-      console.log('🔍 [API-CHATBOT] Web user ID provided:', webUserId);
-      // Could map web_user_id to user_id if there's a mapping table
+      console.log('🔍 [API-CHATBOT] Identifying user by web_user_id:', webUserId);
+      const { data: conversation } = await supabase
+        .from('customer_conversations')
+        .select('user_id')
+        .eq('web_user_id', webUserId)
+        .not('user_id', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (conversation?.user_id) {
+        console.log('✅ [API-CHATBOT] User identified by web_user_id:', conversation.user_id);
+        return conversation.user_id;
+      }
     }
 
-    console.warn('⚠️ [API-CHATBOT] Could not identify user from provided identifiers', {
-      phoneNumberId,
-      customerPhoneNumber,
-      webUserId
-    });
+    // Fallback: Use first available user with active configuration
+    console.log('⚠️ [API-CHATBOT] Could not identify specific user, using fallback');
+    const { data: fallbackUser } = await supabase
+      .from('user_groq_config')
+      .select('user_id')
+      .limit(1)
+      .maybeSingle();
+
+    if (fallbackUser?.user_id) {
+      console.log('✅ [API-CHATBOT] Using fallback user:', fallbackUser.user_id);
+      return fallbackUser.user_id;
+    }
+
+    console.warn('⚠️ [API-CHATBOT] No user could be identified');
     return null;
   } catch (error) {
     console.error('❌ [API-CHATBOT] Error identifying user:', error);
@@ -106,67 +117,21 @@ async function identifyUser(
 }
 
 /**
- * Get user's WhatsApp credentials (access_token, phone_number_id)
- * Returns credentials object or null if not configured
- */
-async function getUserWhatsAppCredentials(
-  supabase: any,
-  userId: string | null
-): Promise<{ accessToken: string; phoneNumberId: string } | null> {
-  try {
-    if (!userId) {
-      console.warn('⚠️ [API-CHATBOT] No user ID provided for WhatsApp credentials');
-      return null;
-    }
-
-    console.log('🔍 [API-CHATBOT] Fetching WhatsApp credentials for user:', userId);
-
-    const { data: whatsappConfig, error } = await supabase
-      .from('user_whatsapp_config')
-      .select('access_token, phone_number_id')
-      .eq('user_id', userId)
-      .eq('is_active', true)
-      .maybeSingle();
-
-    if (error) {
-      console.error('❌ [API-CHATBOT] Error fetching WhatsApp credentials:', error);
-      return null;
-    }
-
-    if (!whatsappConfig || !whatsappConfig.access_token || !whatsappConfig.phone_number_id) {
-      console.warn('⚠️ [API-CHATBOT] WhatsApp credentials not configured for user:', userId);
-      return null;
-    }
-
-    console.log('✅ [API-CHATBOT] Found WhatsApp credentials for user');
-    return {
-      accessToken: whatsappConfig.access_token,
-      phoneNumberId: whatsappConfig.phone_number_id
-    };
-  } catch (error) {
-    console.error('❌ [API-CHATBOT] Exception fetching WhatsApp credentials:', error);
-    return null;
-  }
-}
-
-/**
  * Check auto-reply rules for keyword matches
- * Returns matched response or null if no match found
  */
 async function checkAutoReplyRules(
   supabase: any,
   userId: string | null,
-  userMessage: string
+  messageText: string
 ): Promise<string | null> {
   try {
     if (!userId) {
-      console.log('🔍 [API-CHATBOT] No user ID, skipping auto-reply check');
+      console.log('⚠️ [API-CHATBOT] No userId provided, skipping auto-reply check');
       return null;
     }
 
-    console.log('🔍 [API-CHATBOT] Checking auto-reply rules for user:', userId);
+    const lowerMessage = messageText.toLowerCase().trim();
 
-    // Get all active auto-reply rules for this user, ordered by priority
     const { data: rules, error } = await supabase
       .from('whatsapp_auto_replies')
       .select('*')
@@ -175,454 +140,224 @@ async function checkAutoReplyRules(
       .order('priority', { ascending: false });
 
     if (error) {
-      console.error('❌ [API-CHATBOT] Error fetching auto-reply rules:', error);
+      console.error('❌ [API-CHATBOT] Error querying auto-replies:', error);
       return null;
     }
 
     if (!rules || rules.length === 0) {
-      console.log('ℹ️ [API-CHATBOT] No auto-reply rules configured for user');
+      console.log('📝 [API-CHATBOT] No auto-reply rules found for user');
       return null;
     }
 
-    console.log(`🔍 [API-CHATBOT] Found ${rules.length} auto-reply rules, checking for matches...`);
+    console.log(`📝 [API-CHATBOT] Checking ${rules.length} auto-reply rules`);
 
-    // Normalize user message for matching (lowercase, trim)
-    const normalizedMessage = userMessage.toLowerCase().trim();
-
-    // Check each rule in priority order
     for (const rule of rules) {
-      if (!rule.trigger_words || rule.trigger_words.length === 0) {
-        continue;
-      }
+      const triggerWords = rule.trigger_words || [];
 
-      // Check if any trigger word matches
-      const matched = rule.trigger_words.some((keyword: string) => {
-        const normalizedKeyword = keyword.toLowerCase().trim();
-
-        if (rule.use_regex) {
-          // Use regex matching if enabled
-          try {
-            const regex = new RegExp(normalizedKeyword, rule.pattern_flags || 'i');
-            return regex.test(normalizedMessage);
-          } catch (regexError) {
-            console.error('❌ [API-CHATBOT] Invalid regex pattern:', normalizedKeyword);
-            return false;
-          }
-        } else {
-          // Simple keyword matching (case-insensitive)
-          return normalizedMessage.includes(normalizedKeyword);
+      for (const triggerWord of triggerWords) {
+        if (lowerMessage.includes(triggerWord.toLowerCase())) {
+          console.log(`✅ [API-CHATBOT] Auto-reply match: "${triggerWord}" -> Rule ID: ${rule.id}`);
+          return rule.response;
         }
-      });
-
-      if (matched) {
-        console.log(`✅ [API-CHATBOT] Matched auto-reply rule (priority ${rule.priority}):`, rule.trigger_words);
-
-        // Log analytics
-        try {
-          await supabase
-            .from('auto_reply_analytics')
-            .insert({
-              rule_id: rule.id,
-              phone_number: normalizedMessage.substring(0, 20), // Just for logging
-              triggered_at: new Date().toISOString(),
-              successful: true
-            });
-        } catch (analyticsError) {
-          console.warn('⚠️ [API-CHATBOT] Failed to log auto-reply analytics:', analyticsError);
-        }
-
-        // Replace variables if any
-        let response = rule.response;
-        if (rule.variables && typeof rule.variables === 'object') {
-          for (const [key, value] of Object.entries(rule.variables)) {
-            response = response.replace(new RegExp(`{{${key}}}`, 'g'), String(value));
-          }
-        }
-
-        return response;
       }
     }
 
-    console.log('ℹ️ [API-CHATBOT] No auto-reply rule matched, will use AI');
+    console.log('📝 [API-CHATBOT] No trigger word matched in message');
     return null;
   } catch (error) {
-    console.error('❌ [API-CHATBOT] Exception checking auto-reply rules:', error);
+    console.error('❌ [API-CHATBOT] Error checking auto-reply rules:', error);
     return null;
   }
 }
 
 /**
- * Get user-specific Groq client for customer service
- * Returns null if no configuration found (instead of throwing)
+ * Get user's Groq configuration and create client
  */
-async function getUserGroqClient(
-  supabase: any,
-  userId: string | null
-): Promise<{ client: any; model: string } | null> {
+async function getUserGroqClient(supabase: any, userId: string | null): Promise<{ client: Groq; model: string } | null> {
   try {
     if (!userId) {
-      console.warn('⚠️ [API-CHATBOT] No user ID provided for Groq client');
+      console.warn('⚠️ [API-CHATBOT] No userId provided, cannot get Groq config');
       return null;
     }
 
-    console.log('🔍 [API-CHATBOT] Fetching Groq config for user:', userId);
-
-    // Get user's Groq configuration from user_groq_config
-    const { data: groqConfig, error: groqError } = await supabase
+    const { data: groqConfig, error } = await supabase
       .from('user_groq_config')
       .select('api_key, model')
       .eq('user_id', userId)
       .maybeSingle();
 
-    if (groqError) {
-      console.error('❌ [API-CHATBOT] Error fetching Groq config:', groqError);
-      return null;
-    }
+    if (error || !groqConfig || !groqConfig.api_key) {
+      console.warn('⚠️ [API-CHATBOT] No Groq config found for user, trying fallback');
 
-    if (!groqConfig || !groqConfig.api_key) {
-      console.error('❌ [API-CHATBOT] No Groq configuration found for user:', userId);
-      return null;
-    }
+      // Fallback: Try to get any available Groq configuration
+      const { data: anyConfig } = await supabase
+        .from('user_groq_config')
+        .select('api_key, model')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-    // Use configured model or fallback to default
-    const DEFAULT_MODEL = 'gemma2-9b-it';
-    const DEPRECATED_MODELS = ["llama3-70b-8192", "llama3-8b-8192", "gemma-7b-it", "mixtral-8x7b-32768"];
-
-    let model = groqConfig.model || DEFAULT_MODEL;
-
-    // Check if model is deprecated and replace it
-    if (DEPRECATED_MODELS.includes(model)) {
-      console.warn(`⚠️ [API-CHATBOT] Detected deprecated model ${model}, switching to ${DEFAULT_MODEL}`);
-      model = DEFAULT_MODEL;
-
-      // Update the database to prevent future issues
-      try {
-        await supabase
-          .from('user_groq_config')
-          .update({ model: DEFAULT_MODEL })
-          .eq('user_id', userId);
-        console.log(`✅ [API-CHATBOT] Updated user ${userId}'s model from deprecated to ${DEFAULT_MODEL}`);
-      } catch (updateError) {
-        console.error('❌ [API-CHATBOT] Failed to update deprecated model in database:', updateError);
+      if (!anyConfig || !anyConfig.api_key) {
+        return null;
       }
+
+      let modelToUse = anyConfig.model || DEFAULT_MODEL;
+      if (DEPRECATED_MODELS.includes(modelToUse)) {
+        modelToUse = DEFAULT_MODEL;
+      }
+
+      console.log('✅ [API-CHATBOT] Using fallback Groq config with model:', modelToUse);
+      return {
+        client: new Groq({ apiKey: anyConfig.api_key }),
+        model: modelToUse
+      };
     }
 
-    console.log('✅ [API-CHATBOT] Found Groq config, model:', model);
+    let modelToUse = groqConfig.model || DEFAULT_MODEL;
+    if (DEPRECATED_MODELS.includes(modelToUse)) {
+      console.warn(`[SECURITY] Detected deprecated model ${modelToUse}, replacing with ${DEFAULT_MODEL}`);
+      modelToUse = DEFAULT_MODEL;
+    }
 
+    console.log('✅ [API-CHATBOT] Using user Groq config with model:', modelToUse);
     return {
       client: new Groq({ apiKey: groqConfig.api_key }),
-      model: model
+      model: modelToUse
     };
   } catch (error) {
-    console.error('❌ [API-CHATBOT] Error creating Groq client:', error);
+    console.error('❌ [API-CHATBOT] Error getting Groq config:', error);
     return null;
   }
 }
 
 /**
- * Send WhatsApp message using user's credentials
+ * Get user's WhatsApp credentials
+ */
+async function getUserWhatsAppCredentials(supabase: any, userId: string | null): Promise<{
+  access_token: string;
+  phone_number_id: string;
+} | null> {
+  try {
+    if (!userId) {
+      return null;
+    }
+
+    const { data: config, error } = await supabase
+      .from('user_whatsapp_config')
+      .select('access_token, phone_number_id')
+      .eq('user_id', userId)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (error || !config) {
+      console.error('❌ [API-CHATBOT] No WhatsApp config found for user:', userId);
+      return null;
+    }
+
+    return config;
+  } catch (error) {
+    console.error('❌ [API-CHATBOT] Error getting WhatsApp credentials:', error);
+    return null;
+  }
+}
+
+/**
+ * Send WhatsApp message
  */
 async function sendWhatsAppMessage(
-  credentials: { accessToken: string; phoneNumberId: string },
-  recipientPhone: string,
-  messageText: string
+  credentials: { access_token: string; phone_number_id: string },
+  phoneNumber: string,
+  message: string
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
-    console.log('📤 [API-CHATBOT] Sending WhatsApp message to:', recipientPhone);
+    const url = `https://graph.facebook.com/v17.0/${credentials.phone_number_id}/messages`;
 
-    const whatsappApiUrl = `https://graph.facebook.com/v17.0/${credentials.phoneNumberId}/messages`;
-
-    const response = await fetch(whatsappApiUrl, {
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${credentials.accessToken}`,
-        'Content-Type': 'application/json'
+        'Authorization': `Bearer ${credentials.access_token}`,
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: recipientPhone,
+        to: phoneNumber,
         type: 'text',
         text: {
-          preview_url: false,
-          body: messageText
+          body: message
         }
       })
     });
 
     if (!response.ok) {
       const errorData = await response.text();
-      console.error('❌ [API-CHATBOT] WhatsApp API error:', response.status, errorData);
+      console.error('❌ [API-CHATBOT] WhatsApp API error:', errorData);
       return {
         success: false,
-        error: `WhatsApp API returned ${response.status}: ${errorData}`
+        error: `WhatsApp API error: ${response.status}`
       };
     }
 
-    const responseData = await response.json();
-    console.log('✅ [API-CHATBOT] WhatsApp message sent successfully:', responseData.messages?.[0]?.id);
+    const data = await response.json();
+    console.log('✅ [API-CHATBOT] WhatsApp message sent successfully');
 
     return {
       success: true,
-      messageId: responseData.messages?.[0]?.id
+      messageId: data.messages?.[0]?.id
     };
   } catch (error) {
-    console.error('❌ [API-CHATBOT] Exception sending WhatsApp message:', error);
+    console.error('❌ [API-CHATBOT] Failed to send WhatsApp message:', error);
     return {
       success: false,
-      error: error.message || 'Failed to send WhatsApp message'
+      error: error.message
     };
   }
 }
 
-/**
- * Validate source from request context
- */
-function validateAndGetSource(req: Request, claimedSource: string): 'web' | 'whatsapp' {
-  const referer = req.headers.get('referer');
-  const origin = req.headers.get('origin');
-  const userAgent = req.headers.get('user-agent') || '';
-
-  // If request has referer or origin, it's definitely from web
-  if (referer || origin) {
-    if (claimedSource !== 'web') {
-      console.warn(`⚠️ [API-CHATBOT] Source mismatch: claimed ${claimedSource}, but has referer/origin`);
-    }
-    return 'web';
-  }
-
-  // If claimed as WhatsApp, trust it (no easy way to verify)
-  // But log for monitoring
-  if (claimedSource === 'whatsapp') {
-    console.log('📱 [API-CHATBOT] WhatsApp source claimed (no referer)');
-    return 'whatsapp';
-  }
-
-  // Default to claimed source
-  return claimedSource as 'web' | 'whatsapp';
-}
-
-/**
- * Safely convert timestamp to ISO string format
- * Handles UNIX timestamps (seconds), milliseconds, and ISO strings
- */
-function convertToISOTimestamp(timestamp?: string | number): string {
-  try {
-    if (!timestamp) {
-      return new Date().toISOString();
-    }
-
-    // If already an ISO string, validate and return
-    if (typeof timestamp === 'string' && timestamp.includes('T')) {
-      const date = new Date(timestamp);
-      if (!isNaN(date.getTime())) {
-        return date.toISOString();
-      }
-    }
-
-    // Convert to number if string
-    const numericTimestamp = typeof timestamp === 'string' ? parseInt(timestamp, 10) : timestamp;
-
-    // Check if it's a valid number
-    if (isNaN(numericTimestamp)) {
-      console.warn('⚠️ [API-CHATBOT] Invalid timestamp, using current time:', timestamp);
-      return new Date().toISOString();
-    }
-
-    // If timestamp is in seconds (< year 3000 in seconds: 32503680000)
-    // Convert to milliseconds by multiplying by 1000
-    const timestampMs = numericTimestamp < 32503680000 ? numericTimestamp * 1000 : numericTimestamp;
-
-    const date = new Date(timestampMs);
-
-    // Validate the date
-    if (isNaN(date.getTime())) {
-      console.warn('⚠️ [API-CHATBOT] Invalid date from timestamp, using current time:', timestamp);
-      return new Date().toISOString();
-    }
-
-    console.log('✅ [API-CHATBOT] Timestamp converted:', {
-      input: timestamp,
-      output: date.toISOString()
-    });
-
-    return date.toISOString();
-  } catch (error) {
-    console.error('❌ [API-CHATBOT] Error converting timestamp:', error);
-    return new Date().toISOString();
-  }
-}
-
-/**
- * Check for duplicate messages to prevent double-processing
- */
-async function checkDuplicateMessage(
-  supabase: any,
-  content: string,
-  phoneNumber?: string,
-  webUserId?: string,
-  sender: string = 'user'
-): Promise<boolean> {
-  try {
-    let query = supabase
-      .from('customer_conversations')
-      .select('id')
-      .eq('content', content)
-      .eq('sender', sender)
-      .gte('created_at', new Date(Date.now() - 10000).toISOString()); // Within last 10 seconds
-
-    if (phoneNumber) {
-      query = query.eq('phone_number', phoneNumber);
-    } else if (webUserId) {
-      query = query.eq('web_user_id', webUserId);
-    }
-
-    const { data, error } = await query.maybeSingle();
-
-    if (error) {
-      console.error('❌ [API-CHATBOT] Error checking duplicate:', error);
-      return false; // On error, assume no duplicate
-    }
-
-    return !!data;
-  } catch (error) {
-    console.error('❌ [API-CHATBOT] Exception checking duplicate:', error);
-    return false;
-  }
-}
-
-serve(async (req: Request): Promise<Response> => {
+Deno.serve(async (req: Request) => {
   const startTime = Date.now();
-  let requestData: ChatbotRequest | null = null;
 
-  // Handle CORS preflight request
-  if (req.method === 'OPTIONS') {
+  // Handle CORS preflight requests
+  if (req.method === "OPTIONS") {
     return new Response(null, {
-      status: 204,
+      status: 200,
       headers: corsHeaders
     });
   }
 
   try {
-    console.log(`🤖 [API-CHATBOT] ${req.method} request received from ${req.headers.get('origin') || 'unknown'}`);
-
-    // Only allow POST requests
-    if (req.method !== 'POST') {
-      console.error('❌ [API-CHATBOT] Method not allowed:', req.method);
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: 'Method not allowed. Use POST.'
-        }),
-        {
-          status: 405,
-          headers: {
-            'Content-Type': 'application/json',
-            ...corsHeaders
-          }
-        }
-      );
-    }
-
-    // Parse and validate request body
-    try {
-      requestData = await req.json();
-      console.log('🤖 [API-CHATBOT] Request data received:', {
-        source: requestData.source,
-        chatbotType: requestData.chatbotType,
-        hasText: !!requestData.text,
-        textLength: requestData.text?.length || 0,
-        hasWebUserId: !!requestData.webUserId,
-        hasPhoneNumber: !!requestData.phoneNumber,
-        hasPhoneNumberId: !!requestData.phoneNumberId, // ✅ Log for debugging
-        hasSessionId: !!requestData.sessionId
-      });
-    } catch (parseError) {
-      console.error('❌ [API-CHATBOT] Failed to parse request JSON:', parseError);
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: 'Invalid JSON in request body'
-        }),
-        {
-          status: 400,
-          headers: {
-            'Content-Type': 'application/json',
-            ...corsHeaders
-          }
-        }
-      );
-    }
-
-    // Validate required fields
-    if (!requestData.text || requestData.text.trim().length === 0) {
-      console.error('❌ [API-CHATBOT] Missing or empty text field');
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: 'Text field is required and cannot be empty'
-        }),
-        {
-          status: 400,
-          headers: {
-            'Content-Type': 'application/json',
-            ...corsHeaders
-          }
-        }
-      );
-    }
-
-    if (!requestData.source || !['web', 'whatsapp'].includes(requestData.source)) {
-      console.error('❌ [API-CHATBOT] Invalid source field:', requestData.source);
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: 'Source must be either "web" or "whatsapp"'
-        }),
-        {
-          status: 400,
-          headers: {
-            'Content-Type': 'application/json',
-            ...corsHeaders
-          }
-        }
-      );
-    }
-
-    // Validate text length
-    if (requestData.text.length > 4000) {
-      console.error('❌ [API-CHATBOT] Text too long:', requestData.text.length);
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: 'Text message too long (max 4000 characters)'
-        }),
-        {
-          status: 400,
-          headers: {
-            'Content-Type': 'application/json',
-            ...corsHeaders
-          }
-        }
-      );
-    }
-
-    // Validate and get trusted source
-    const verifiedSource = validateAndGetSource(req, requestData.source);
-
-    // Get Supabase client
+    // Create Supabase client
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
-    if (!supabaseUrl || !supabaseServiceKey) {
-      console.error('❌ [API-CHATBOT] Missing Supabase environment variables');
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error('Missing Supabase environment variables');
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Parse request body
+    const requestData: ChatbotRequest = await req.json();
+
+    console.log('🤖 [API-CHATBOT] Request data received:', {
+      source: requestData.source,
+      chatbotType: requestData.chatbotType,
+      hasText: !!requestData.text,
+      textLength: requestData.text?.length || 0,
+      hasWebUserId: !!requestData.webUserId,
+      hasPhoneNumber: !!requestData.phoneNumber,
+      hasPhoneNumberId: !!requestData.phoneNumberId,
+      hasSessionId: !!requestData.sessionId
+    });
+
+    // Validate request data
+    if (!requestData.text || !requestData.source) {
       return new Response(
         JSON.stringify({
           success: false,
-          error: 'Server configuration error'
+          error: 'Missing required fields: text and source are required'
         }),
         {
-          status: 500,
+          status: 400,
           headers: {
             'Content-Type': 'application/json',
             ...corsHeaders
@@ -631,54 +366,23 @@ serve(async (req: Request): Promise<Response> => {
       );
     }
 
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    // Verify and normalize source
+    const verifiedSource = requestData.source === 'web' ? 'web' : 'whatsapp';
+    console.log('🔍 [API-CHATBOT] Verified source:', verifiedSource);
 
-    // Check for duplicate message
-    const isDuplicate = await checkDuplicateMessage(
-      supabase,
-      requestData.text,
-      requestData.phoneNumber,
-      requestData.webUserId,
-      'user'
-    );
-
-    if (isDuplicate) {
-      console.log('⚠️ [API-CHATBOT] Duplicate message detected, skipping processing');
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: 'Duplicate message detected. Please wait before sending again.',
-          duplicate: true
-        }),
-        {
-          status: 429,
-          headers: {
-            'Content-Type': 'application/json',
-            ...corsHeaders
-          }
-        }
-      );
-    }
-
-    // Save incoming message to database with verified source
-    console.log('💾 [API-CHATBOT] Saving incoming message with verified source:', verifiedSource);
-
-    // Convert timestamp safely
-    const safeTimestamp = convertToISOTimestamp(requestData.timestamp);
-    console.log('🕐 [API-CHATBOT] Using timestamp:', safeTimestamp);
-
+    // Save incoming message to database
+    console.log('💾 [API-CHATBOT] Saving incoming message to database');
     const { data: savedMessage, error: saveError } = await supabase
       .from('customer_conversations')
       .insert({
         phone_number: requestData.phoneNumber,
         web_user_id: requestData.webUserId,
         session_id: requestData.sessionId,
-        source: verifiedSource, // Use verified source
+        source: verifiedSource,
         content: requestData.text,
         sender: 'user',
-        intent: 'client',
-        user_agent: requestData.userAgent,
-        created_at: safeTimestamp
+        intent: requestData.chatbotType || 'client',
+        created_at: new Date().toISOString()
       })
       .select('id')
       .single();
@@ -935,16 +639,13 @@ ${verifiedSource === 'web' ? 'Le client vous contacte via le site web.' : 'Le cl
   } catch (error) {
     console.error('❌ [API-CHATBOT] Critical error:', {
       message: error.message,
-      stack: error.stack,
-      source: requestData?.source || 'unknown'
+      stack: error.stack
     });
 
-    // Return error response with source preservation
+    // Return error response
     const errorResponse: ChatbotResponse = {
       success: false,
-      error: error.message || 'An unexpected error occurred',
-      sessionId: requestData?.sessionId,
-      source: requestData?.source
+      error: error.message || 'An unexpected error occurred'
     };
 
     return new Response(
